@@ -1,0 +1,4 @@
+#!/bin/bash
+set -euo pipefail
+sudo -u minecraft /home/minecraft/linuxgsm/mcserver details 2>&1 || true
+echo "STATUS:OK"

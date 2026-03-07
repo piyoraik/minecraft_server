@@ -1,0 +1,183 @@
+import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda"
+import { SecretsManagerClient } from "@aws-sdk/client-secrets-manager"
+import { createSecretResolver, readRequiredEnv, type CommandPayload } from "../../shared/src"
+
+import { buildPayload } from "./router"
+import { verifyDiscordRequest } from "./verify"
+
+type LambdaEvent = {
+  body?: string | null
+  headers?: Record<string, string | undefined>
+  isBase64Encoded?: boolean
+}
+
+type LambdaResult = {
+  statusCode: number
+  headers: Record<string, string>
+  body: string
+}
+
+type DiscordInteraction = {
+  type?: number
+  token?: string
+  data?: {
+    name?: string
+    options?: Array<{ name?: string }>
+  }
+  member?: {
+    user?: {
+      id?: string
+    }
+  }
+  user?: {
+    id?: string
+  }
+}
+
+type HandlerDeps = {
+  getSecretValue: (secretArn: string) => Promise<string>
+  invokeProcessor: (functionName: string, payload: CommandPayload) => Promise<void>
+}
+
+class InvalidRequestError extends Error {}
+
+const JSON_HEADERS = {
+  "content-type": "application/json"
+}
+
+const createDiscordResponse = (body: object): LambdaResult => {
+  return {
+    statusCode: 200,
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body)
+  }
+}
+
+const createErrorResponse = (statusCode: number, message: string): LambdaResult => {
+  return {
+    statusCode,
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ message })
+  }
+}
+
+const isDiscordInteraction = (value: unknown): value is DiscordInteraction => {
+  return typeof value === "object" && value !== null
+}
+
+const parseInteraction = (body: string): DiscordInteraction => {
+  const parsed: unknown = JSON.parse(body)
+  if (!isDiscordInteraction(parsed)) {
+    throw new InvalidRequestError("Invalid interaction body")
+  }
+  return parsed
+}
+
+const normalizeRequestBody = (event: LambdaEvent): string | null => {
+  const body = event.body
+  if (typeof body !== "string" || body.length === 0) {
+    return null
+  }
+
+  if (event.isBase64Encoded === true) {
+    return Buffer.from(body, "base64").toString("utf-8")
+  }
+
+  return body
+}
+
+const createDefaultDeps = (): HandlerDeps => {
+  const lambdaClient = new LambdaClient({})
+  const getSecretValue = createSecretResolver(new SecretsManagerClient({}))
+
+  const invokeProcessor = async (functionName: string, payload: CommandPayload): Promise<void> => {
+    await lambdaClient.send(
+      new InvokeCommand({
+        FunctionName: functionName,
+        InvocationType: "Event",
+        Payload: Buffer.from(JSON.stringify(payload))
+      })
+    )
+  }
+
+  return {
+    getSecretValue,
+    invokeProcessor
+  }
+}
+
+/**
+ * Discord からの署名検証と ACK 応答を担当するハンドラを組み立てる。
+ * コマンド本体は別 Lambda に委譲し、3 秒制約を超えにくい構成にしている。
+ */
+export const createHandler = (deps: HandlerDeps) => {
+  return async (event: LambdaEvent): Promise<LambdaResult> => {
+    try {
+      console.info("discord-handler request received", {
+        hasBody: typeof event.body === "string" && event.body.length > 0,
+        isBase64Encoded: event.isBase64Encoded === true,
+        headerKeys: Object.keys(event.headers ?? {})
+      })
+
+      const env = readRequiredEnv([
+        "DISCORD_PUBLIC_KEY_SECRET_ARN",
+        "DISCORD_APP_ID_SECRET_ARN",
+        "PROCESSOR_FUNCTION_NAME"
+      ] as const)
+
+      const body = normalizeRequestBody(event)
+      if (body === null) {
+        return createErrorResponse(400, "Missing request body")
+      }
+
+      const [discordPublicKey, applicationId] = await Promise.all([
+        deps.getSecretValue(env.DISCORD_PUBLIC_KEY_SECRET_ARN),
+        deps.getSecretValue(env.DISCORD_APP_ID_SECRET_ARN)
+      ])
+      console.info("discord-handler secrets loaded")
+
+      const headers = event.headers ?? {}
+      const isValidRequest = verifyDiscordRequest({
+        body,
+        headers,
+        discordPublicKeyHex: discordPublicKey
+      })
+      if (!isValidRequest) {
+        console.warn("discord-handler signature validation failed")
+        return createErrorResponse(401, "Invalid request signature")
+      }
+
+      const interaction = parseInteraction(body)
+      console.info("discord-handler interaction parsed", {
+        type: interaction.type,
+        commandName: interaction.data?.name ?? null
+      })
+
+      if (interaction.type === 1) {
+        console.info("discord-handler responding to ping")
+        return createDiscordResponse({ type: 1 })
+      }
+
+      const payload = buildPayload(interaction, applicationId)
+      await deps.invokeProcessor(env.PROCESSOR_FUNCTION_NAME, payload)
+      console.info("discord-handler processor invoked", {
+        commandName: payload.commandName,
+        userId: payload.userId
+      })
+
+      return createDiscordResponse({ type: 5 })
+    } catch (error) {
+      if (error instanceof InvalidRequestError || error instanceof SyntaxError) {
+        return createErrorResponse(400, "Bad request")
+      }
+      if (error instanceof Error && error.message.includes("Missing")) {
+        return createErrorResponse(400, error.message)
+      }
+
+      console.error("discord-handler failed", { error })
+      return createErrorResponse(500, "Internal server error")
+    }
+  }
+}
+
+export const handler = createHandler(createDefaultDeps())

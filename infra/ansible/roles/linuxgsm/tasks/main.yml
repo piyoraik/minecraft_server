@@ -1,0 +1,26 @@
+---
+- name: LinuxGSM 依存パッケージをインストール
+  ansible.builtin.dnf:
+    name:
+      - ca-certificates
+      - wget
+      - tar
+      - gzip
+      - tmux
+      - unzip
+    state: present
+
+- name: LinuxGSM スクリプトを配置
+  ansible.builtin.get_url:
+    url: https://linuxgsm.sh
+    dest: "{{ linuxgsm_dir }}/linuxgsm.sh"
+    mode: "0755"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_user }}"
+
+- name: mcserver をインストール
+  become_user: "{{ minecraft_user }}"
+  ansible.builtin.command:
+    cmd: "./linuxgsm.sh mcserver"
+    chdir: "{{ linuxgsm_dir }}"
+    creates: "{{ linuxgsm_dir }}/mcserver"

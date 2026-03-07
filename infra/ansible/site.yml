@@ -1,0 +1,15 @@
+---
+- name: minecraft setup
+  hosts: minecraft
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: 接続確認のため facts を取得
+      ansible.builtin.setup:
+  roles:
+    - common
+    - java
+    - linuxgsm
+    - minecraft
+    - wrapper-scripts
+    - monitoring

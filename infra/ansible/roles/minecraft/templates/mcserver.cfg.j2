@@ -1,0 +1,8 @@
+# LinuxGSM configuration for Minecraft server.
+ip="0.0.0.0"
+port="{{ minecraft_port }}"
+queryport="{{ minecraft_query_port }}"
+rconport="{{ rcon_port }}"
+rconpassword='{{ rcon_password | replace("'", "'\"'\"'") }}'
+maxplayers="{{ minecraft_max_players }}"
+javaram="{{ linuxgsm_javaram }}"

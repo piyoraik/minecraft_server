@@ -1,0 +1,17 @@
+{
+  "name": "minecraft-discord-server",
+  "private": true,
+  "workspaces": [
+    "services/shared",
+    "services/discord-handler",
+    "services/command-processor",
+    "services/player-event-processor",
+    "infra/cdk"
+  ],
+  "scripts": {
+    "build": "npm run --workspaces build",
+    "typecheck": "npm run --workspaces typecheck",
+    "test": "npm run --workspaces test",
+    "lint": "npm run --workspaces lint"
+  }
+}
