@@ -47,6 +47,13 @@
     group: "{{ minecraft_user }}"
     mode: "0755"
 
+- name: RCON パスワードが設定されていることを確認
+  ansible.builtin.assert:
+    that:
+      - rcon_password is string
+      - rcon_password | length > 0
+    fail_msg: "rcon_password が未設定です。MINECRAFT_RCON_PASSWORD を環境変数として渡してください。"
+
 - name: LinuxGSM 用 mcserver.cfg を配置
   ansible.builtin.template:
     src: mcserver.cfg.j2

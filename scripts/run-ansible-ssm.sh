@@ -40,6 +40,24 @@ require_command() {
   fi
 }
 
+require_python_module() {
+  local module_name="$1"
+  local python_bin="$2"
+
+  if ! "${python_bin}" -c "import ${module_name}" >/dev/null 2>&1; then
+    echo "Required Python module not found: ${module_name}" >&2
+    echo "Ansible is using: ${python_bin}" >&2
+    echo "Install it into the same environment, for example:" >&2
+    echo "  uv add ansible-core boto3 botocore" >&2
+    echo "or point ANSIBLE_PLAYBOOK_CMD/ANSIBLE_GALAXY_CMD at an environment that already has boto3." >&2
+    exit 1
+  fi
+}
+
+get_ansible_python() {
+  eval "${ANSIBLE_PLAYBOOK_CMD}" --version | awk -F '[()]' '/^  python version = / { print $(NF-1); exit }'
+}
+
 if [[ -z "${MINECRAFT_INSTANCE_ID:-}" ]]; then
   MINECRAFT_INSTANCE_ID="$(get_stack_output "${COMPUTE_STACK_NAME}" "InstanceId")"
 fi
@@ -75,6 +93,14 @@ export OBJC_DISABLE_INITIALIZE_FORK_SAFETY="${OBJC_DISABLE_INITIALIZE_FORK_SAFET
 
 cd "${WORKDIR}"
 require_command session-manager-plugin
+
+ansible_python="$(get_ansible_python)"
+if [[ -z "${ansible_python}" ]]; then
+  echo "Failed to determine the Python interpreter used by ${ANSIBLE_PLAYBOOK_CMD}" >&2
+  exit 1
+fi
+
+require_python_module boto3 "${ansible_python}"
 eval "${ANSIBLE_GALAXY_CMD}" collection install -r infra/ansible/collections/requirements.yml
 
 playbook_args=()

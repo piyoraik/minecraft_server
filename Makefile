@@ -5,8 +5,16 @@ LAMBDA_STACK_NAME ?= LambdaStack
 RCON_SECRET_ID ?= /minecraft/rcon-password
 DISCORD_APPLICATION_ID_SECRET_ID ?= /minecraft/discord-application-id
 DISCORD_BOT_TOKEN_SECRET_ID ?= /minecraft/discord-token
+ifneq ("$(wildcard /Users/s-tanaka/work/minecraft/.venv/bin/ansible-galaxy)","")
+ANSIBLE_GALAXY_CMD ?= /Users/s-tanaka/work/minecraft/.venv/bin/ansible-galaxy
+else
 ANSIBLE_GALAXY_CMD ?= ansible-galaxy
+endif
+ifneq ("$(wildcard /Users/s-tanaka/work/minecraft/.venv/bin/ansible-playbook)","")
+ANSIBLE_PLAYBOOK_CMD ?= /Users/s-tanaka/work/minecraft/.venv/bin/ansible-playbook
+else
 ANSIBLE_PLAYBOOK_CMD ?= ansible-playbook
+endif
 SESSION_INSTANCE_ID ?=
 
 .PHONY: register-commands ansible-ssm ansible-ssm-check ansible-ssm-op ansible-ssm-op-check ssm-session
