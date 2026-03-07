@@ -30,6 +30,13 @@
 
 詳細な手順は [docs/setup.md](/Users/s-tanaka/work/minecraft/docs/setup.md) を参照してください。
 
+## リポジトリ構成
+
+- CDK の実装本体: `infra/cdk/stacks/`, `infra/cdk/constructs/`
+- CDK の `infra/cdk/lib/` は既存 import 互換のための re-export
+- Ansible の実行本体: `infra/ansible/playbooks/site.yml`
+- `infra/ansible/site.yml` は既存コマンド互換の wrapper
+
 ## 実行入口
 
 ```bash
@@ -57,6 +64,8 @@ op run -- make ansible-ssm
 uv add ansible-core boto3 botocore
 ANSIBLE_GALAXY_CMD="uv run ansible-galaxy" ANSIBLE_PLAYBOOK_CMD="uv run ansible-playbook" op run -- make ansible-ssm
 ```
+
+`.venv/bin/ansible-playbook` と `.venv/bin/ansible-galaxy` があれば、`make ansible-ssm` はそれらを優先します。`amazon.aws.aws_ssm` 接続では、Ansible を実行している同じ Python 環境に `boto3` / `botocore` が必要です。
 
 1Password と `boto3` の認証経路差分を吸収する場合:
 ```bash

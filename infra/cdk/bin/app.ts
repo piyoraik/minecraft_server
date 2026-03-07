@@ -1,8 +1,8 @@
 import { App, type StackProps } from "aws-cdk-lib"
 
-import { ComputeStack } from "../lib/compute-stack"
-import { LambdaStack } from "../lib/lambda-stack"
-import { NetworkStack } from "../lib/network-stack"
+import { ComputeStack } from "../stacks/compute-stack"
+import { LambdaStack } from "../stacks/lambda-stack"
+import { NetworkStack } from "../stacks/network-stack"
 
 const DEFAULT_REGION = "ap-northeast-1"
 

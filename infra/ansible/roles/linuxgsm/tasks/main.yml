@@ -1,18 +1,12 @@
 ---
 - name: LinuxGSM 依存パッケージをインストール
   ansible.builtin.dnf:
-    name:
-      - ca-certificates
-      - wget
-      - tar
-      - gzip
-      - tmux
-      - unzip
+    name: "{{ linuxgsm_packages }}"
     state: present
 
 - name: LinuxGSM スクリプトを配置
   ansible.builtin.get_url:
-    url: https://linuxgsm.sh
+    url: "{{ linuxgsm_install_url }}"
     dest: "{{ linuxgsm_dir }}/linuxgsm.sh"
     mode: "0755"
     owner: "{{ minecraft_user }}"

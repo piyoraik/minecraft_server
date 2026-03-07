@@ -1,0 +1,9 @@
+---
+linuxgsm_packages:
+  - ca-certificates
+  - wget
+  - tar
+  - gzip
+  - tmux
+  - unzip
+linuxgsm_install_url: https://linuxgsm.sh

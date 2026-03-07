@@ -1,0 +1,5 @@
+---
+minecraft_user: minecraft
+minecraft_home: /home/minecraft
+linuxgsm_dir: "{{ minecraft_home }}/linuxgsm"
+minecraft_server_dir: "{{ linuxgsm_dir }}/serverfiles"

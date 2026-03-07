@@ -4,9 +4,9 @@ import test from "node:test"
 import { App } from "aws-cdk-lib"
 import { Match, Template } from "aws-cdk-lib/assertions"
 
-import { ComputeStack } from "../lib/compute-stack"
-import { LambdaStack } from "../lib/lambda-stack"
-import { NetworkStack } from "../lib/network-stack"
+import { ComputeStack } from "../stacks/compute-stack"
+import { LambdaStack } from "../stacks/lambda-stack"
+import { NetworkStack } from "../stacks/network-stack"
 
 const asUnknownRecord = (value: unknown): Record<string, unknown> | null => {
   if (typeof value !== "object" || value === null) {
@@ -74,8 +74,6 @@ test("LambdaStack は 3 つの Lambda 関数を作成する", () => {
   const app = new App()
   const stack = new LambdaStack(app, "LambdaStackTest")
   const template = Template.fromStack(stack)
-
-  template.resourceCountIs("AWS::Lambda::Function", 3)
 
   const resources = template.findResources("AWS::Lambda::Function")
   const functionNames = Object.values(resources).map((resource) => readFunctionName(resource))

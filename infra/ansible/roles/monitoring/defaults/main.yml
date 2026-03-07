@@ -1,0 +1,4 @@
+---
+cloudwatch_agent_config_path: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+cloudwatch_log_group_prefix: /minecraft/ec2
+aws_region: ap-northeast-1

@@ -1,5 +1,5 @@
 ---
 - name: Java 21 Corretto をインストール
   ansible.builtin.dnf:
-    name: java-21-amazon-corretto-headless
+    name: "{{ java_package_name }}"
     state: present

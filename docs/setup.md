@@ -15,6 +15,8 @@ cd /Users/s-tanaka/work/minecraft/infra/cdk
 cdk deploy --all
 ```
 
+CDK の実装本体は `infra/cdk/stacks/` と `infra/cdk/constructs/` にあり、`infra/cdk/lib/` は既存 import 互換のための re-export として残している。
+
 `LambdaStack` から Ansible 用 S3 バケット名、`ComputeStack` から EC2 Instance ID が出力される
 
 3. Secrets Manager に値を投入する
@@ -46,6 +48,8 @@ export DISCORD_BOT_TOKEN_SECRET_ID="/minecraft/discord-token"
 export AWS_REGION="ap-northeast-1"
 make ansible-ssm
 ```
+
+Ansible の playbook 実体は `infra/ansible/playbooks/site.yml` で、`infra/ansible/site.yml` は既存実行経路との互換用 wrapper になっている。
 
 Session Manager 接続の前提:
 - ローカルに `session-manager-plugin` が入っていること
