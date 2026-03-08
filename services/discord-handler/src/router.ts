@@ -16,6 +16,7 @@ type DiscordOption = {
 type DiscordData = {
   name?: string
   options?: DiscordOption[]
+  custom_id?: string
 }
 
 type DiscordUser = {
@@ -93,6 +94,18 @@ export const buildPayload = (
   interaction: DiscordInteraction,
   applicationId: string
 ): CommandPayload => {
+  const customId = interaction.data?.custom_id
+  if (typeof customId === "string") {
+    const restoreConfirmPayload = buildRestoreConfirmPayload(
+      interaction,
+      applicationId,
+      customId
+    )
+    if (restoreConfirmPayload !== null) {
+      return restoreConfirmPayload
+    }
+  }
+
   const commandName = parseCommandName(interaction)
   if (commandName === null) {
     throw new Error("Unsupported command")
@@ -218,5 +231,119 @@ export const buildPayload = (
     applicationId,
     interactionToken,
     userId
+  }
+}
+
+const RESTORE_CONFIRM_PREFIX = "restore:confirm:"
+const RESTORE_CANCEL_PREFIX = "restore:cancel:"
+const RESTORE_CONFIRM_TTL_MS = 15 * 60 * 1000
+
+const getUserId = (interaction: DiscordInteraction): string => {
+  const userId = interaction.member?.user?.id ?? interaction.user?.id
+  if (typeof userId !== "string" || userId.length === 0) {
+    throw new Error("Missing user id")
+  }
+
+  return userId
+}
+
+const buildRestoreConfirmPayload = (
+  interaction: DiscordInteraction,
+  applicationId: string,
+  customId: string
+): CommandPayload | null => {
+  if (!customId.startsWith(RESTORE_CONFIRM_PREFIX)) {
+    return null
+  }
+
+  const timestampText = customId.slice(RESTORE_CONFIRM_PREFIX.length)
+  const timestamp = Number.parseInt(timestampText, 10)
+  if (!Number.isFinite(timestamp)) {
+    throw new Error("Invalid restore confirmation")
+  }
+
+  if (Date.now() - timestamp > RESTORE_CONFIRM_TTL_MS) {
+    throw new Error("Restore confirmation expired")
+  }
+
+  const interactionToken = interaction.token
+  if (typeof interactionToken !== "string" || interactionToken.length === 0) {
+    throw new Error("Missing interaction token")
+  }
+
+  return {
+    commandName: "restore",
+    applicationId,
+    interactionToken,
+    userId: getUserId(interaction)
+  }
+}
+
+export const isRestoreCancelInteraction = (interaction: DiscordInteraction): boolean => {
+  return typeof interaction.data?.custom_id === "string" &&
+    interaction.data.custom_id.startsWith(RESTORE_CANCEL_PREFIX)
+}
+
+export const isRestoreConfirmInteraction = (interaction: DiscordInteraction): boolean => {
+  return typeof interaction.data?.custom_id === "string" &&
+    interaction.data.custom_id.startsWith(RESTORE_CONFIRM_PREFIX)
+}
+
+export const createRestoreConfirmationResponse = (): {
+  type: 4
+  data: {
+    flags: number
+    content: string
+    components: Array<{
+      type: 1
+      components: Array<{
+        type: 2
+        style: number
+        label: string
+        custom_id: string
+      }>
+    }>
+  }
+} => {
+  const timestamp = Date.now()
+
+  return {
+    type: 4,
+    data: {
+      flags: 64,
+      content: "latest backup を restore します。現在の serverfiles は上書きされます。実行してよいですか？",
+      components: [
+        {
+          type: 1,
+          components: [
+            {
+              type: 2,
+              style: 4,
+              label: "Restore を実行",
+              custom_id: `${RESTORE_CONFIRM_PREFIX}${timestamp}`
+            },
+            {
+              type: 2,
+              style: 2,
+              label: "キャンセル",
+              custom_id: `${RESTORE_CANCEL_PREFIX}${timestamp}`
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
+export const createRestoreCanceledResponse = (): {
+  type: 7
+  data: { content: string; components: [] }
+} => {
+  return {
+    type: 7,
+    data: {
+      content: "restore をキャンセルしました。",
+      components: []
+    }
   }
 }

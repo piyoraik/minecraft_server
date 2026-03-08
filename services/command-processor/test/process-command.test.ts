@@ -331,8 +331,9 @@ test("restore コマンドは stopped インスタンスを一時起動して re
   assert.match(sentMessages[0] ?? "", /latest backup を restore/)
 })
 
-test("restore コマンドは running インスタンスでは拒否する", async () => {
+test("restore コマンドは running インスタンスでは Minecraft を停止して restore する", async () => {
   const sentMessages: string[] = []
+  const calls: string[] = []
 
   await processCommand(
     {
@@ -353,15 +354,20 @@ test("restore コマンドは running インスタンスでは拒否する", asy
           throw new Error("should not start")
         },
         stopInstance: async () => {
-          throw new Error("should not stop")
+          throw new Error("should not stop instance")
         },
         waitForState: async () => {
           throw new Error("should not wait")
         }
       },
       ssm: {
-        runCommand: async () => {
-          throw new Error("should not run")
+        runCommand: async (_instanceId, command) => {
+          calls.push(command)
+          if (command === "/usr/local/bin/mc-stop") {
+            return "stopped"
+          }
+          assert.equal(command, "/usr/local/bin/mc-restore")
+          return "backup restored"
         },
         waitUntilReady: async () => {
           throw new Error("should not wait")
@@ -382,7 +388,8 @@ test("restore コマンドは running インスタンスでは拒否する", asy
   )
 
   assert.equal(sentMessages.length, 1)
-  assert.match(sentMessages[0] ?? "", /restore できません/)
+  assert.deepEqual(calls, ["/usr/local/bin/mc-stop", "/usr/local/bin/mc-restore"])
+  assert.match(sentMessages[0] ?? "", /Minecraft は停止したままです/)
 })
 
 test("stop コマンド時にオンラインセッションをクローズする", async () => {

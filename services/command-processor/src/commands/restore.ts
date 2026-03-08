@@ -7,8 +7,8 @@ const formatOutput = (output: string): string => {
 }
 
 /**
- * 停止中インスタンスに対して latest backup の restore だけを明示実行する。
- * 実行中サーバーへの上書きを避けるため、running 状態では拒否し、一時起動後に restore して再停止する。
+ * latest backup の restore だけを明示実行する。
+ * running 時は Minecraft を停止してから restore し、stopped 時は一時起動して restore 後に再停止する。
  */
 export const handleRestore = async (
   ec2: Ec2Gateway,
@@ -18,7 +18,9 @@ export const handleRestore = async (
   const instance = await ec2.describeInstance(instanceId)
 
   if (instance.state === "running") {
-    return "⚠️ サーバー稼働中は restore できません。先に /mc stop を実行してください"
+    await ssm.runCommand(instanceId, createSsmCommand("mc-stop"))
+    const output = await ssm.runCommand(instanceId, createSsmCommand("mc-restore"))
+    return `✅ latest backup を restore しました。Minecraft は停止したままです${formatOutput(output)}`
   }
 
   if (instance.state !== "stopped") {

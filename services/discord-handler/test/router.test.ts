@@ -1,7 +1,13 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { buildPayload, parseCommandName } from "../src/router"
+import {
+  buildPayload,
+  createRestoreCanceledResponse,
+  createRestoreConfirmationResponse,
+  isRestoreCancelInteraction,
+  parseCommandName
+} from "../src/router"
 
 test("parseCommandName はサブコマンドを優先して返す", () => {
   const commandName = parseCommandName({
@@ -61,6 +67,63 @@ test("buildPayload は restore をまとめる", () => {
     applicationId: "app-1",
     interactionToken: "token-1",
     userId: "user-1"
+  })
+})
+
+test("buildPayload は restore confirm button interaction をまとめる", () => {
+  const timestamp = Date.now()
+  const payload = buildPayload(
+    {
+      token: "token-1",
+      data: {
+        custom_id: `restore:confirm:${timestamp}`
+      },
+      member: {
+        user: {
+          id: "user-1"
+        }
+      }
+    },
+    "app-1"
+  )
+
+  assert.deepEqual(payload, {
+    commandName: "restore",
+    applicationId: "app-1",
+    interactionToken: "token-1",
+    userId: "user-1"
+  })
+})
+
+test("createRestoreConfirmationResponse は confirm と cancel button を返す", () => {
+  const response = createRestoreConfirmationResponse()
+
+  assert.equal(response.type, 4)
+  assert.equal(response.data.flags, 64)
+  assert.match(response.data.content, /restore/)
+  assert.equal(response.data.components[0]?.components.length, 2)
+  assert.match(response.data.components[0]?.components[0]?.custom_id ?? "", /^restore:confirm:/)
+  assert.match(response.data.components[0]?.components[1]?.custom_id ?? "", /^restore:cancel:/)
+})
+
+test("isRestoreCancelInteraction は cancel button を判定する", () => {
+  assert.equal(
+    isRestoreCancelInteraction({
+      data: {
+        custom_id: `restore:cancel:${Date.now()}`
+      }
+    }),
+    true
+  )
+})
+
+test("createRestoreCanceledResponse は update 用 payload を返す", () => {
+  assert.deepEqual(createRestoreCanceledResponse(), {
+    type: 7,
+    data: {
+      content: "restore をキャンセルしました。",
+      components: []
+    }
   })
 })
 

@@ -7,7 +7,12 @@ import {
   type CommandPayload
 } from "@minecraft/shared"
 
-import { buildPayload } from "./router"
+import {
+  buildPayload,
+  createRestoreCanceledResponse,
+  createRestoreConfirmationResponse,
+  isRestoreCancelInteraction
+} from "./router"
 import { verifyDiscordRequest } from "./verify"
 
 type LambdaEvent = {
@@ -161,6 +166,40 @@ export const createHandler = (deps: HandlerDeps) => {
       if (interaction.type === 1) {
         logger.info("discord-handler responding to ping")
         return createDiscordResponse({ type: 1 })
+      }
+
+      if (interaction.type === 2) {
+        const payload = buildPayload(interaction, applicationId)
+        if (payload.commandName === "restore") {
+          logger.info("discord-handler restore confirmation requested", {
+            userId: payload.userId
+          })
+          return createDiscordResponse(createRestoreConfirmationResponse())
+        }
+
+        await deps.invokeProcessor(env.PROCESSOR_FUNCTION_NAME, payload)
+        logger.info("discord-handler processor invoked", {
+          commandName: payload.commandName,
+          userId: payload.userId
+        })
+
+        return createDiscordResponse({ type: 5 })
+      }
+
+      if (interaction.type === 3) {
+        if (isRestoreCancelInteraction(interaction)) {
+          logger.info("discord-handler restore canceled")
+          return createDiscordResponse(createRestoreCanceledResponse())
+        }
+
+        const payload = buildPayload(interaction, applicationId)
+        await deps.invokeProcessor(env.PROCESSOR_FUNCTION_NAME, payload)
+        logger.info("discord-handler processor invoked", {
+          commandName: payload.commandName,
+          userId: payload.userId
+        })
+
+        return createDiscordResponse({ type: 6 })
       }
 
       const payload = buildPayload(interaction, applicationId)

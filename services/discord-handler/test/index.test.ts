@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import { generateKeyPairSync, sign } from "node:crypto"
 import test from "node:test"
 
+import type { CommandPayload } from "@minecraft/shared"
+
 import { createHandler } from "../src/index"
 
 const exportRawPublicKeyHex = (): { publicKeyHex: string; privateKey: ReturnType<typeof generateKeyPairSync>["privateKey"] } => {
@@ -95,6 +97,139 @@ test("COMMAND interaction は ACK 後に processor を invoke する", async () 
   assert.equal(response.statusCode, 200)
   assert.equal(response.body, JSON.stringify({ type: 5 }))
   assert.deepEqual(invocations, ["minecraft-command-processor"])
+})
+
+test("restore COMMAND interaction は確認メッセージを返し processor を invoke しない", async () => {
+  const { publicKeyHex, privateKey } = exportRawPublicKeyHex()
+  let invocationCount = 0
+
+  const handler = createHandler({
+    getSecretValue: async (secretArn) => {
+      if (secretArn === "arn:public") {
+        return publicKeyHex
+      }
+      return "app-id"
+    },
+    invokeProcessor: async () => {
+      invocationCount += 1
+    }
+  })
+
+  process.env.DISCORD_PUBLIC_KEY_SECRET_ARN = "arn:public"
+  process.env.DISCORD_APP_ID_SECRET_ARN = "arn:app"
+  process.env.PROCESSOR_FUNCTION_NAME = "minecraft-command-processor"
+
+  const body = JSON.stringify({
+    type: 2,
+    token: "token-1",
+    data: {
+      name: "mc",
+      options: [{ name: "restore" }]
+    },
+    member: {
+      user: {
+        id: "user-1"
+      }
+    }
+  })
+  const headers = createSignedHeaders(privateKey, body)
+
+  const response = await handler({ body, headers })
+  const parsedBody = JSON.parse(response.body) as {
+    type: number
+    data: { content: string; components: Array<{ components: Array<{ custom_id: string }> }> }
+  }
+
+  assert.equal(response.statusCode, 200)
+  assert.equal(parsedBody.type, 4)
+  assert.match(parsedBody.data.content, /restore/)
+  assert.match(parsedBody.data.components[0]?.components[0]?.custom_id ?? "", /^restore:confirm:/)
+  assert.equal(invocationCount, 0)
+})
+
+test("restore confirm button interaction は processor を invoke して deferred update を返す", async () => {
+  const { publicKeyHex, privateKey } = exportRawPublicKeyHex()
+  const invocations: CommandPayload[] = []
+
+  const handler = createHandler({
+    getSecretValue: async (secretArn) => {
+      if (secretArn === "arn:public") {
+        return publicKeyHex
+      }
+      return "app-id"
+    },
+    invokeProcessor: async (_functionName, payload) => {
+      invocations.push(payload)
+    }
+  })
+
+  process.env.DISCORD_PUBLIC_KEY_SECRET_ARN = "arn:public"
+  process.env.DISCORD_APP_ID_SECRET_ARN = "arn:app"
+  process.env.PROCESSOR_FUNCTION_NAME = "minecraft-command-processor"
+
+  const body = JSON.stringify({
+    type: 3,
+    token: "token-1",
+    data: {
+      custom_id: `restore:confirm:${Date.now()}`
+    },
+    member: {
+      user: {
+        id: "user-1"
+      }
+    }
+  })
+  const headers = createSignedHeaders(privateKey, body)
+
+  const response = await handler({ body, headers })
+
+  assert.equal(response.statusCode, 200)
+  assert.equal(response.body, JSON.stringify({ type: 6 }))
+  assert.equal(invocations.length, 1)
+  assert.equal(invocations[0]?.commandName, "restore")
+})
+
+test("restore cancel button interaction は processor を invoke しない", async () => {
+  const { publicKeyHex, privateKey } = exportRawPublicKeyHex()
+  let invocationCount = 0
+
+  const handler = createHandler({
+    getSecretValue: async (secretArn) => {
+      if (secretArn === "arn:public") {
+        return publicKeyHex
+      }
+      return "app-id"
+    },
+    invokeProcessor: async () => {
+      invocationCount += 1
+    }
+  })
+
+  process.env.DISCORD_PUBLIC_KEY_SECRET_ARN = "arn:public"
+  process.env.DISCORD_APP_ID_SECRET_ARN = "arn:app"
+  process.env.PROCESSOR_FUNCTION_NAME = "minecraft-command-processor"
+
+  const body = JSON.stringify({
+    type: 3,
+    token: "token-1",
+    data: {
+      custom_id: `restore:cancel:${Date.now()}`
+    },
+    member: {
+      user: {
+        id: "user-1"
+      }
+    }
+  })
+  const headers = createSignedHeaders(privateKey, body)
+
+  const response = await handler({ body, headers })
+  const parsedBody = JSON.parse(response.body) as { type: number; data: { content: string } }
+
+  assert.equal(response.statusCode, 200)
+  assert.equal(parsedBody.type, 7)
+  assert.match(parsedBody.data.content, /キャンセル/)
+  assert.equal(invocationCount, 0)
 })
 
 test("COMMAND cmd interaction は commandArgument を含めて processor を invoke する", async () => {
