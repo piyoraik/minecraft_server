@@ -20,7 +20,14 @@ const shellEscape = (value: string): string => {
 }
 
 export const createSsmCommand = (
-  commandName: "mc-start" | "mc-stop" | "mc-stop-no-backup" | "mc-status" | "mc-command" | "mc-restore",
+  commandName:
+    | "mc-start"
+    | "mc-stop"
+    | "mc-stop-no-backup"
+    | "mc-status"
+    | "mc-command"
+    | "mc-backup"
+    | "mc-restore",
   args: string[] = []
 ): string => {
   const escapedArgs = args.map((arg) => shellEscape(arg)).join(" ")

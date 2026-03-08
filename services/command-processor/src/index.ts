@@ -3,10 +3,13 @@ import { logger, readRequiredEnv, type CommandPayload } from "@minecraft/shared"
 import { createEc2Gateway, type Ec2Gateway } from "./aws/ec2"
 import { createPlayerStatsGateway, type PlayerStatsGateway } from "./aws/player-stats"
 import { createSsmGateway, type SsmGateway } from "./aws/ssm"
+import { handleBackup } from "./commands/backup"
 import { handleStart } from "./commands/start"
 import { handleAdmin } from "./commands/admin"
 import { handleCmd } from "./commands/cmd"
+import { handleDifficulty } from "./commands/difficulty"
 import { handleGamemode } from "./commands/gamemode"
+import { handleMorning } from "./commands/morning"
 import { handlePlaytime } from "./commands/playtime"
 import { handleRestore } from "./commands/restore"
 import { handleStatus } from "./commands/status"
@@ -40,7 +43,10 @@ const isCommandPayload = (value: unknown): value is CommandPayload => {
     commandName === "start" ||
     commandName === "stop" ||
     commandName === "status" ||
+    commandName === "backup" ||
     commandName === "restore" ||
+    commandName === "difficulty" ||
+    commandName === "morning" ||
     commandName === "cmd" ||
     commandName === "whitelist" ||
     commandName === "admin" ||
@@ -71,6 +77,11 @@ const isCommandPayload = (value: unknown): value is CommandPayload => {
         payload.gameMode === "creative" ||
         payload.gameMode === "adventure" ||
         payload.gameMode === "spectator")) &&
+    (commandName !== "difficulty" ||
+      (payload.difficulty === "peaceful" ||
+        payload.difficulty === "easy" ||
+        payload.difficulty === "normal" ||
+        payload.difficulty === "hard")) &&
     (commandName !== "playtime" ||
       (payload.playtimeAction === "top" ||
         (payload.playtimeAction === "player" &&
@@ -114,6 +125,12 @@ export const processCommand = async (
         content = await handleStatus(deps.ec2, deps.ssm, instanceId)
         break
       }
+      case "backup": {
+        const instance = await deps.ec2.findInstanceByProjectTag(projectTagValue)
+        const instanceId = instance.instanceId
+        content = await handleBackup(deps.ec2, deps.ssm, instanceId)
+        break
+      }
       case "restore": {
         const instance = await deps.ec2.findInstanceByProjectTag(projectTagValue)
         const instanceId = instance.instanceId
@@ -142,6 +159,18 @@ export const processCommand = async (
         const instance = await deps.ec2.findInstanceByProjectTag(projectTagValue)
         const instanceId = instance.instanceId
         content = await handleGamemode(payload, deps.ec2, deps.ssm, instanceId)
+        break
+      }
+      case "difficulty": {
+        const instance = await deps.ec2.findInstanceByProjectTag(projectTagValue)
+        const instanceId = instance.instanceId
+        content = await handleDifficulty(payload, deps.ec2, deps.ssm, instanceId)
+        break
+      }
+      case "morning": {
+        const instance = await deps.ec2.findInstanceByProjectTag(projectTagValue)
+        const instanceId = instance.instanceId
+        content = await handleMorning(deps.ec2, deps.ssm, instanceId)
         break
       }
     }

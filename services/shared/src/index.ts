@@ -2,6 +2,7 @@ export type {
   AdminAction,
   CommandName,
   CommandPayload,
+  Difficulty,
   GameMode,
   PlaytimeAction,
   WhitelistAction

@@ -2,6 +2,7 @@ import type {
   AdminAction,
   CommandName,
   CommandPayload,
+  Difficulty,
   GameMode,
   PlaytimeAction,
   WhitelistAction
@@ -38,7 +39,10 @@ const SUPPORTED_COMMANDS: readonly CommandName[] = [
   "start",
   "stop",
   "status",
+  "backup",
   "restore",
+  "difficulty",
+  "morning",
   "cmd",
   "whitelist",
   "admin",
@@ -56,6 +60,10 @@ const isAdminAction = (value: string): value is AdminAction => {
 
 const isGameMode = (value: string): value is GameMode => {
   return ["survival", "creative", "adventure", "spectator"].includes(value)
+}
+
+const isDifficulty = (value: string): value is Difficulty => {
+  return ["peaceful", "easy", "normal", "hard"].includes(value)
 }
 
 const isPlaytimeAction = (value: string): value is PlaytimeAction => {
@@ -194,6 +202,21 @@ export const buildPayload = (
     return {
       commandName,
       gameMode,
+      applicationId,
+      interactionToken,
+      userId
+    }
+  }
+
+  if (commandName === "difficulty") {
+    const difficulty = firstOption?.options?.[0]?.name
+    if (typeof difficulty !== "string" || !isDifficulty(difficulty)) {
+      throw new Error("Missing difficulty")
+    }
+
+    return {
+      commandName,
+      difficulty,
       applicationId,
       interactionToken,
       userId

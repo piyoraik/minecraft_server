@@ -67,7 +67,17 @@ curl \
       {
         "type": 1,
         "name": "restore",
-        "description": "停止中サーバーへ latest backup を復元します"
+        "description": "latest backup を復元します"
+      },
+      {
+        "type": 1,
+        "name": "backup",
+        "description": "S3 に手動 backup を取得します"
+      },
+      {
+        "type": 1,
+        "name": "morning",
+        "description": "ゲーム内時刻を朝にします"
       },
       {
         "type": 1,
@@ -79,6 +89,33 @@ curl \
             "name": "command",
             "description": "例: list, say hello, save-all",
             "required": true
+          }
+        ]
+      },
+      {
+        "type": 2,
+        "name": "difficulty",
+        "description": "難易度を変更します",
+        "options": [
+          {
+            "type": 1,
+            "name": "peaceful",
+            "description": "peaceful に変更します"
+          },
+          {
+            "type": 1,
+            "name": "easy",
+            "description": "easy に変更します"
+          },
+          {
+            "type": 1,
+            "name": "normal",
+            "description": "normal に変更します"
+          },
+          {
+            "type": 1,
+            "name": "hard",
+            "description": "hard に変更します"
           }
         ]
       },

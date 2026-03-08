@@ -273,6 +273,127 @@ test("cmd コマンドは allowlist 外を拒否する", async () => {
   assert.equal(firstMessage, "⚠️ 許可されていないコマンドです")
 })
 
+test("backup コマンドは running インスタンスで save-all 後に backup を取る", async () => {
+  const sentMessages: string[] = []
+  const calls: string[] = []
+
+  await processCommand(
+    {
+      commandName: "backup",
+      applicationId: "app-id",
+      interactionToken: "token-1",
+      userId: "user-1"
+    },
+    {
+      ec2: {
+        findInstanceByProjectTag: async () => ({
+          instanceId: "i-123",
+          state: "running",
+          publicIp: null
+        }),
+        describeInstance: async () => ({ instanceId: "i-123", state: "running", publicIp: null }),
+        startInstance: async () => {
+          throw new Error("should not start instance")
+        },
+        stopInstance: async () => {
+          throw new Error("should not stop instance")
+        },
+        waitForState: async () => {
+          throw new Error("should not wait state")
+        }
+      },
+      ssm: {
+        runCommand: async (_instanceId, command) => {
+          calls.push(command)
+          if (command === "/usr/local/bin/mc-backup") {
+            return "backup uploaded"
+          }
+          return "ok"
+        },
+        waitUntilReady: async () => {
+          throw new Error("should not wait ssm")
+        }
+      },
+      playerStats: {
+        get: async () => null,
+        listTop: async () => [],
+        closeAllOnline: async () => 0
+      },
+      followup: {
+        send: async (_appId, _token, content) => {
+          sentMessages.push(content)
+        }
+      }
+    },
+    "minecraft-server"
+  )
+
+  assert.deepEqual(calls, [
+    "/usr/local/bin/mc-command 'save-off'",
+    "/usr/local/bin/mc-command 'save-all'",
+    "/usr/local/bin/mc-backup",
+    "/usr/local/bin/mc-command 'save-on'"
+  ])
+  assert.match(sentMessages[0] ?? "", /backup を取得しました/)
+})
+
+test("backup コマンドは stopped インスタンスを一時起動して backup を取る", async () => {
+  const sentMessages: string[] = []
+  const calls: string[] = []
+
+  await processCommand(
+    {
+      commandName: "backup",
+      applicationId: "app-id",
+      interactionToken: "token-1",
+      userId: "user-1"
+    },
+    {
+      ec2: {
+        findInstanceByProjectTag: async () => ({
+          instanceId: "i-123",
+          state: "stopped",
+          publicIp: null
+        }),
+        describeInstance: async () => ({ instanceId: "i-123", state: "stopped", publicIp: null }),
+        startInstance: async () => {
+          calls.push("start")
+        },
+        stopInstance: async () => {
+          calls.push("stop")
+        },
+        waitForState: async () => {
+          calls.push("wait-running")
+        }
+      },
+      ssm: {
+        runCommand: async (_instanceId, command) => {
+          calls.push(command)
+          assert.equal(command, "/usr/local/bin/mc-backup")
+          return "backup uploaded"
+        },
+        waitUntilReady: async () => {
+          calls.push("wait-ssm")
+        }
+      },
+      playerStats: {
+        get: async () => null,
+        listTop: async () => [],
+        closeAllOnline: async () => 0
+      },
+      followup: {
+        send: async (_appId, _token, content) => {
+          sentMessages.push(content)
+        }
+      }
+    },
+    "minecraft-server"
+  )
+
+  assert.deepEqual(calls, ["start", "wait-running", "wait-ssm", "/usr/local/bin/mc-backup", "stop"])
+  assert.match(sentMessages[0] ?? "", /backup を取得しました/)
+})
+
 test("restore コマンドは stopped インスタンスを起動して restore 後に Minecraft を起動する", async () => {
   const sentMessages: string[] = []
   const calls: string[] = []
@@ -396,6 +517,99 @@ test("restore コマンドは running インスタンスでは backup なし停�
   assert.equal(sentMessages.length, 1)
   assert.deepEqual(calls, ["/usr/local/bin/mc-stop-no-backup", "/usr/local/bin/mc-restore", "/usr/local/bin/mc-start"])
   assert.match(sentMessages[0] ?? "", /Minecraft を起動しました/)
+})
+
+test("difficulty コマンドを実行できる", async () => {
+  const sentMessages: string[] = []
+
+  await processCommand(
+    {
+      commandName: "difficulty",
+      difficulty: "hard",
+      applicationId: "app-id",
+      interactionToken: "token-1",
+      userId: "user-1"
+    },
+    {
+      ec2: {
+        findInstanceByProjectTag: async () => ({
+          instanceId: "i-123",
+          state: "running",
+          publicIp: null
+        }),
+        describeInstance: async () => ({ instanceId: "i-123", state: "running", publicIp: null }),
+        startInstance: async () => Promise.resolve(),
+        stopInstance: async () => Promise.resolve(),
+        waitForState: async () => Promise.resolve()
+      },
+      ssm: {
+        runCommand: async (_instanceId, command) => {
+          assert.equal(command, "/usr/local/bin/mc-command 'difficulty hard'")
+          return "difficulty updated"
+        },
+        waitUntilReady: async () => Promise.resolve()
+      },
+      playerStats: {
+        get: async () => null,
+        listTop: async () => [],
+        closeAllOnline: async () => 0
+      },
+      followup: {
+        send: async (_appId, _token, content) => {
+          sentMessages.push(content)
+        }
+      }
+    },
+    "minecraft-server"
+  )
+
+  assert.match(sentMessages[0] ?? "", /難易度を hard に変更しました/)
+})
+
+test("morning コマンドを実行できる", async () => {
+  const sentMessages: string[] = []
+
+  await processCommand(
+    {
+      commandName: "morning",
+      applicationId: "app-id",
+      interactionToken: "token-1",
+      userId: "user-1"
+    },
+    {
+      ec2: {
+        findInstanceByProjectTag: async () => ({
+          instanceId: "i-123",
+          state: "running",
+          publicIp: null
+        }),
+        describeInstance: async () => ({ instanceId: "i-123", state: "running", publicIp: null }),
+        startInstance: async () => Promise.resolve(),
+        stopInstance: async () => Promise.resolve(),
+        waitForState: async () => Promise.resolve()
+      },
+      ssm: {
+        runCommand: async (_instanceId, command) => {
+          assert.equal(command, "/usr/local/bin/mc-command 'time set day'")
+          return "time updated"
+        },
+        waitUntilReady: async () => Promise.resolve()
+      },
+      playerStats: {
+        get: async () => null,
+        listTop: async () => [],
+        closeAllOnline: async () => 0
+      },
+      followup: {
+        send: async (_appId, _token, content) => {
+          sentMessages.push(content)
+        }
+      }
+    },
+    "minecraft-server"
+  )
+
+  assert.match(sentMessages[0] ?? "", /時刻を朝に変更しました/)
 })
 
 test("stop コマンド時にオンラインセッションをクローズする", async () => {

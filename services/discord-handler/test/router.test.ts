@@ -71,6 +71,87 @@ test("buildPayload は restore をまとめる", () => {
   })
 })
 
+test("buildPayload は backup をまとめる", () => {
+  const payload = buildPayload(
+    {
+      token: "token-1",
+      data: {
+        name: "mc",
+        options: [{ name: "backup" }]
+      },
+      member: {
+        user: {
+          id: "user-1"
+        }
+      }
+    },
+    "app-1"
+  )
+
+  assert.deepEqual(payload, {
+    commandName: "backup",
+    applicationId: "app-1",
+    interactionToken: "token-1",
+    userId: "user-1"
+  })
+})
+
+test("buildPayload は difficulty 引数をまとめる", () => {
+  const payload = buildPayload(
+    {
+      token: "token-1",
+      data: {
+        name: "mc",
+        options: [
+          {
+            name: "difficulty",
+            options: [{ name: "hard" }]
+          }
+        ]
+      },
+      member: {
+        user: {
+          id: "user-1"
+        }
+      }
+    },
+    "app-1"
+  )
+
+  assert.deepEqual(payload, {
+    commandName: "difficulty",
+    difficulty: "hard",
+    applicationId: "app-1",
+    interactionToken: "token-1",
+    userId: "user-1"
+  })
+})
+
+test("buildPayload は morning をまとめる", () => {
+  const payload = buildPayload(
+    {
+      token: "token-1",
+      data: {
+        name: "mc",
+        options: [{ name: "morning" }]
+      },
+      member: {
+        user: {
+          id: "user-1"
+        }
+      }
+    },
+    "app-1"
+  )
+
+  assert.deepEqual(payload, {
+    commandName: "morning",
+    applicationId: "app-1",
+    interactionToken: "token-1",
+    userId: "user-1"
+  })
+})
+
 test("buildPayload は restore confirm button interaction をまとめる", () => {
   const timestamp = Date.now()
   const payload = buildPayload(

@@ -2,7 +2,10 @@ export type CommandName =
   | "start"
   | "stop"
   | "status"
+  | "backup"
   | "restore"
+  | "difficulty"
+  | "morning"
   | "cmd"
   | "whitelist"
   | "admin"
@@ -11,6 +14,7 @@ export type CommandName =
 export type WhitelistAction = "add" | "remove" | "list" | "on" | "off"
 export type AdminAction = "grant" | "revoke"
 export type GameMode = "survival" | "creative" | "adventure" | "spectator"
+export type Difficulty = "peaceful" | "easy" | "normal" | "hard"
 export type PlaytimeAction = "player" | "top"
 
 type BaseCommandPayload = {
@@ -21,7 +25,11 @@ type BaseCommandPayload = {
 
 export type CommandPayload =
   | (BaseCommandPayload & {
-      commandName: "start" | "stop" | "status" | "restore"
+      commandName: "start" | "stop" | "status" | "backup" | "restore" | "morning"
+    })
+  | (BaseCommandPayload & {
+      commandName: "difficulty"
+      difficulty: Difficulty
     })
   | (BaseCommandPayload & {
       commandName: "cmd"
