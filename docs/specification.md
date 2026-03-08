@@ -1,26 +1,31 @@
-# Minecraft Discord 管理システム 実装仕様書 v2
+# Minecraft Discord 管理システム 実装仕様書 vCurrent
 
 > **改訂履歴**
-> - v1: 初版（レビュー前）
-> - v2: アーキテクチャレビュー反映版（2026-03-07）
->   - Lambda 2段構成の追加
->   - Secrets Manager 設計の追加
->   - Security Group / EBS 設計の明示
->   - IAM 最小権限の具体化
->   - Ansible Role 分割の明確化
->   - AI実装向けにインターフェース定義を追加
-> - v3: インスタンスタイプ変更（2026-03-07）
->   - `t3.medium` → `t4g.medium` に変更（Graviton2、コスト最適化）
->   - JVM ヒープを t4g.medium の RAM に合わせて調整（-Xmx2.5G）
+> - v1: 初版
+> - v2: Discord 受付 / 処理 Lambda の 2 段構成を導入
+> - vCurrent: 2026-03-08 時点の実装へ全面追従
+>   - `t3.medium` / x86_64 構成へ更新
+>   - `player-event-processor` と DynamoDB 集計を反映
+>   - `/mc restore` の確認 UI と restore 後再起動を反映
+>   - S3 backup / restore の現在仕様を反映
+>   - Ansible / CDK の現行ディレクトリ構成へ更新
 
 ---
 
 ## 1. 概要・目的
 
-Discord の slash command から Minecraft サーバー用 EC2 を起動・停止し、
-起動中は Minecraft のサーバーコマンドを実行できるシステム。
+Discord の slash command から Minecraft サーバー用 EC2 を起動・停止し、起動中は Minecraft の管理コマンドを実行できるシステム。
 
-将来的に `/mc cmd`, `/mc backup`, `/mc debug` を追加しやすい拡張性を持った土台を構築する。
+現在の主な対象機能:
+- `/mc start` `/mc stop` `/mc status`
+- `/mc restore`
+- `/mc cmd`
+- `/mc whitelist`
+- `/mc admin`
+- `/mc gamemode`
+- `/mc playtime`
+- プレイヤー入退室通知
+- `/mc stop` 時の S3 backup
 
 ---
 
@@ -28,25 +33,26 @@ Discord の slash command から Minecraft サーバー用 EC2 を起動・停�
 
 | レイヤー | 技術 | 役割 |
 |---------|------|------|
-| IaC | AWS CDK (TypeScript) | AWSリソース定義 |
-| EC2構成管理 | Ansible | EC2内のあるべき状態を管理 |
-| プロセス管理 | LinuxGSM + systemd | Minecraftサーバーの起動停止 |
-| コマンド実行 | RCON (`127.0.0.1:25575`) | Minecraftサーバーコマンド実行 |
-| 実行経路 | AWS SSM RunCommand | ラッパースクリプト呼び出し |
-| API (受付) | Lambda (TypeScript) | Discord署名検証・ACK返却 |
-| API (処理) | Lambda (TypeScript) | AWS操作・Discord結果通知 |
-| シークレット | AWS Secrets Manager | Token / Password 一元管理 |
+| IaC | AWS CDK (TypeScript) | AWS リソース定義 |
+| EC2 構成管理 | Ansible | EC2 内のあるべき状態を構成 |
+| サーバー管理 | LinuxGSM | Minecraft サーバープロセス管理 |
+| コマンド実行 | wrapper script + SSM RunCommand | EC2 内操作の統一入口 |
+| API (受付) | Lambda (TypeScript) | Discord 署名検証・即時応答 |
+| API (処理) | Lambda (TypeScript) | EC2 / SSM / Discord follow-up |
+| イベント処理 | Lambda (TypeScript) | join / leave 集計と通知 |
+| データ保存 | DynamoDB | プレイ時間集計 |
+| バックアップ | S3 | `serverfiles` backup 保存 |
+| シークレット | AWS Secrets Manager | Discord / RCON / Webhook 管理 |
 
-### 設計方針（役割分担の明示）
+### 設計方針
 
-| コンポーネント | 担当範囲 | やってはいけないこと |
-|--------------|---------|-------------------|
-| CDK | AWSリソース定義のみ | EC2内設定の変更 |
-| Ansible | EC2内設定のみ | AWSリソースの作成 |
-| SSM | ラッパースクリプトの呼び出しのみ | 構成変更・直接設定ファイル編集 |
-| RCON | Minecraftコマンド実行のみ | プロセス管理（起動停止） |
-| LinuxGSM | Minecraftプロセス管理のみ | AWS操作 |
-| Lambda | Discord受付・AWS API呼び出しのみ | EC2内ファイル直接操作 |
+| コンポーネント | 担当範囲 | 担当しないこと |
+|--------------|---------|----------------|
+| CDK | AWS リソース定義 | EC2 内設定 |
+| Ansible | EC2 内設定 | AWS リソース作成 |
+| Lambda | Discord / AWS API 呼び出し | EC2 内ファイルの直接編集 |
+| SSM | wrapper script 呼び出し | 構成管理 |
+| LinuxGSM | Minecraft 起動停止 | AWS 操作 |
 
 ---
 
@@ -54,642 +60,482 @@ Discord の slash command から Minecraft サーバー用 EC2 を起動・停�
 
 ### 全体構成図
 
-```
+```text
 Discord
   │
-  │ Slash Command (HTTPS POST)
+  │ Slash Command / Button Interaction
   ▼
 Lambda Function URL
   │
   ▼
-┌─────────────────────────────────┐
-│ 受付 Lambda (discord-handler)    │
-│  1. Discord 署名検証             │
-│  2. PING → PONG (type:1)        │
-│  3. Command → ACK (type:5)      │
-│  4. 処理 Lambda を非同期 Invoke  │
-└──────────────┬──────────────────┘
-               │ Lambda.invokeAsync
-               ▼
-┌─────────────────────────────────┐
-│ 処理 Lambda (command-processor)  │
-│  1. コマンド処理                  │
-│  2. EC2 API 操作                 │
-│  3. SSM RunCommand               │
-│  4. follow-up webhook 送信       │
-└──────┬──────────────┬────────────┘
-       │              │
-  EC2 API        SSM RunCommand
-       │              │
-       ▼              ▼
-┌──────────────────────────────┐
-│ EC2 (Amazon Linux 2023)      │
-│  /usr/local/bin/mc-*         │ ← SSMから実行（ラッパースクリプト）
-│        │                     │
-│  LinuxGSM (systemd管理)      │
-│  Minecraft Server            │
-│  RCON (127.0.0.1:25575)      │
-│        │                     │
-│  EBS Volume (永続化)         │
-└──────────────────────────────┘
+┌──────────────────────────────────────────┐
+│ 受付 Lambda (discord-handler)             │
+│  1. Discord 署名検証                      │
+│  2. PING → PONG                           │
+│  3. 通常 command → ACK                    │
+│  4. /mc restore → 確認 UI を返す          │
+│  5. Confirm button → 処理 Lambda を invoke │
+└─────────────────┬────────────────────────┘
+                  │ Lambda Invoke (async)
+                  ▼
+┌──────────────────────────────────────────┐
+│ 処理 Lambda (command-processor)           │
+│  1. EC2 状態確認                          │
+│  2. EC2 start / stop                      │
+│  3. SSM RunCommand                        │
+│  4. Discord follow-up 送信                │
+└───────────────┬──────────────────────────┘
+                │
+                ▼
+┌──────────────────────────────────────────┐
+│ EC2 (Amazon Linux 2023)                  │
+│  LinuxGSM                                │
+│  Minecraft Server                        │
+│  /usr/local/bin/mc-*                     │
+│  CloudWatch Agent                        │
+└───────┬─────────────────────────┬────────┘
+        │                         │
+        │ CloudWatch Logs         │ SSM RunCommand
+        ▼                         ▼
+┌───────────────────────┐   ┌───────────────────────┐
+│ player-event-processor│   │ wrapper scripts       │
+│  join/leave を集計     │   │ mc-start / mc-stop    │
+│  DynamoDB 更新         │   │ mc-backup / mc-restore│
+│  Discord Webhook 通知  │   └───────────────────────┘
+└──────────┬────────────┘
+           │
+           ▼
+   DynamoDB / Discord Webhook
 
-Secrets Manager (/minecraft/*)
-  ├─ discord-token
-  ├─ discord-public-key
-  ├─ discord-application-id
-  └─ rcon-password
+Secrets Manager
+  ├─ /minecraft/discord-token
+  ├─ /minecraft/discord-public-key
+  ├─ /minecraft/discord-application-id
+  ├─ /minecraft/rcon-password
+  └─ /minecraft/player-event-webhook-url
 
-CloudWatch Logs
-  ├─ /minecraft/lambda/discord-handler
-  ├─ /minecraft/lambda/command-processor
-  ├─ /minecraft/ec2/minecraft-server
-  └─ /minecraft/ec2/system
+S3
+  └─ AnsibleSsmBucket
+     ├─ aws_ssm connection 用の転送領域
+     └─ world-backups/latest.tar.gz などの backup
 ```
 
-### ⚠️ 重要: Discord インタラクション 3秒制限への対応
+### Discord インタラクション 3 秒制限への対応
 
-Discord Interaction API は **3秒以内にレスポンスがないとタイムアウトエラー** となる。
-EC2 起動・停止・SSM実行は数十秒〜数分かかるため、**Lambda を2段構成** にする。
+Discord Interaction API には短い応答制限があるため、受付と実処理を分ける。
 
-**受付 Lambda**: 即座に ACK (`type: 5`) を返し、処理 Lambda を非同期 Invoke して終了。
-**処理 Lambda**: 実際の処理を行い、完了後に Discord follow-up webhook で結果を送信。
+- `discord-handler`
+  - 署名検証
+  - 即時応答
+  - 非同期 invoke
+- `command-processor`
+  - 時間のかかる EC2 / SSM 操作
+  - follow-up 送信
 
 ---
 
-## 4. AWS設計
+## 4. AWS 設計
 
 ### 4.1 EC2 仕様
 
 | 項目 | 値 |
 |-----|---|
-| AMI | Amazon Linux 2023 最新 (**arm64**) |
-| インスタンスタイプ | `t4g.medium`（CDK Context で変更可能） |
-| アーキテクチャ | ARM64 (Graviton2) |
+| AMI | Amazon Linux 2023 最新 |
+| アーキテクチャ | x86_64 |
+| インスタンスタイプ | `t3.medium` |
 | vCPU / RAM | 2 vCPU / 4 GB |
-| EBS | 30GB gp3, **`deleteOnTermination: false`** |
-| Elastic IP | 割り当てあり（IP固定） |
-| SSM Agent | AL2023 プリインストール済み |
-| UserData | SSM Agent 確認のみ。構成変更は Ansible で行う |
-| Tags | `Project: minecraft-server`（IAM条件付き権限に使用） |
+| EBS | 30GB gp3 |
+| EBS 暗号化 | 有効 |
+| `deleteOnTermination` | `false` |
+| Elastic IP | 割り当てあり |
+| SSM Agent | AL2023 既定 |
+| Tags | `Project: minecraft-server` を含む標準タグ |
 
-> **インスタンスタイプ選定理由**
-> 3〜4人プレイを想定。Minecraft Java Edition は JVM 上で動作するため ARM64 でも問題なく稼働する。
-> t4g.medium は t3.medium より約 20% 安価で同等スペック。
-> RAM 4GB は3〜4人のバニラ〜軽量MOD環境で十分（ヒープ 2.5GB 確保可能）。
-> MODパックや重量プラグインを導入する場合は `t4g.large`（8GB）に変更すること。
->
-> ⚠️ **AMI は arm64 用を指定すること**。CDK で `MachineImage.latestAmazonLinux2023({ cpuType: AmazonLinuxCpuType.ARM_64 })` を使用する。
+> 注意:
+> 旧版仕様書にあった `t4g.medium` / ARM64 は現行実装では採用していない。
 
-### 4.2 Security Group ルール
+### 4.2 Security Group
 
 | 方向 | ポート | プロトコル | ソース | 用途 |
 |-----|--------|-----------|--------|------|
 | Inbound | 25565 | TCP | 0.0.0.0/0 | Minecraft クライアント接続 |
-| Outbound | ALL | ALL | 0.0.0.0/0 | インターネットアクセス |
+| Outbound | ALL | ALL | 0.0.0.0/0 | SSM / package / Mojang / S3 など |
 
-> **注意**: RCON ポート (25575) は **Security Group で開放しない**。
-> RCON は `server.properties` で `server-ip=127.0.0.1` に設定し、localhost のみリッスンさせる。
-> SSH ポート (22) は不要。アクセスは SSM Session Manager 経由で行う。
+補足:
+- RCON (`25575`) は Security Group で開けない
+- SSH (`22`) も開けない
+- 運用接続は Session Manager を前提にする
 
 ### 4.3 CDK Stack 分割
 
-```
-NetworkStack
-  └─ Security Group
+```text
+Network
+  ├─ VPC
+  ├─ Security Group
   └─ Elastic IP
 
-ComputeStack (depends: NetworkStack)
-  └─ IAM Instance Profile
-  └─ EC2 Instance
-  └─ Elastic IP Association
+Lambda
+  ├─ Secrets Manager
+  ├─ Lambda LogGroup
+  ├─ Discord Handler
+  ├─ Command Processor
+  ├─ Player Event Processor
+  ├─ S3 Bucket
+  └─ DynamoDB
 
-LambdaStack (depends: ComputeStack)
-  └─ Secrets Manager シークレット x4（空で作成）
-  └─ 受付 Lambda + Function URL + IAM Role
-  └─ 処理 Lambda + IAM Role
+Compute
+  ├─ EC2 Instance Role
+  ├─ EC2 Instance
+  └─ Elastic IP Association
 ```
+
+依存関係:
+- `Compute -> Network`
+- `Compute -> Lambda`
+
+`Compute` が `Lambda` stack の S3 bucket を backup 用として参照しているため、`Compute -> Lambda` 依存がある。
 
 ### 4.4 Lambda 設定
 
-| 項目 | 受付 Lambda | 処理 Lambda |
-|-----|------------|------------|
-| 関数名 | `minecraft-discord-handler` | `minecraft-command-processor` |
-| Runtime | Node.js 20.x | Node.js 20.x |
-| タイムアウト | 10秒 | 300秒 |
-| メモリ | 256MB | 256MB |
-| トリガー | Lambda Function URL | 受付 Lambda からの非同期 Invoke |
-| Function URL AuthType | NONE | なし |
+| 項目 | discord-handler | command-processor | player-event-processor |
+|-----|-----------------|-------------------|------------------------|
+| 関数名 | `minecraft-discord-handler` | `minecraft-command-processor` | `minecraft-player-event-processor` |
+| Runtime | Node.js 20.x | Node.js 20.x | Node.js 20.x |
+| Timeout | 10 秒 | 300 秒 | 30 秒 |
+| Memory | 256 MB | 256 MB | 256 MB |
+| 配布 | `aws-lambda-nodejs` bundle | `aws-lambda-nodejs` bundle | `aws-lambda-nodejs` bundle |
 
-### 4.5 IAM 最小権限
+`discord-handler` には Function URL (`AuthType.NONE`) を付与する。
 
-#### 受付 Lambda 実行ロール
+### 4.5 IAM
 
-```json
-[
-  {
-    "Effect": "Allow",
-    "Action": ["lambda:InvokeFunction"],
-    "Resource": "arn:aws:lambda:{region}:{account}:function:minecraft-command-processor"
-  },
-  {
-    "Effect": "Allow",
-    "Action": ["secretsmanager:GetSecretValue"],
-    "Resource": "arn:aws:secretsmanager:{region}:{account}:secret:/minecraft/discord-*"
-  },
-  {
-    "Effect": "Allow",
-    "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
-    "Resource": "arn:aws:logs:{region}:{account}:log-group:/minecraft/lambda/discord-handler:*"
-  }
-]
-```
+#### `discord-handler`
 
-#### 処理 Lambda 実行ロール
+- `lambda:InvokeFunction` on `minecraft-command-processor`
+- `secretsmanager:GetSecretValue`
+- CloudWatch Logs 書き込み
 
-```json
-[
-  {
-    "Effect": "Allow",
-    "Action": ["ec2:StartInstances", "ec2:StopInstances"],
-    "Resource": "*",
-    "Condition": {
-      "StringEquals": {"ec2:ResourceTag/Project": "minecraft-server"}
-    }
-  },
-  {
-    "Effect": "Allow",
-    "Action": ["ec2:DescribeInstances"],
-    "Resource": "*"
-  },
-  {
-    "Effect": "Allow",
-    "Action": ["ssm:SendCommand", "ssm:GetCommandInvocation"],
-    "Resource": "*"
-  },
-  {
-    "Effect": "Allow",
-    "Action": ["secretsmanager:GetSecretValue"],
-    "Resource": "arn:aws:secretsmanager:{region}:{account}:secret:/minecraft/*"
-  },
-  {
-    "Effect": "Allow",
-    "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
-    "Resource": "arn:aws:logs:{region}:{account}:log-group:/minecraft/lambda/command-processor:*"
-  }
-]
-```
+#### `command-processor`
 
-#### EC2 IAM Instance Profile
+- `ec2:StartInstances`, `ec2:StopInstances`
+  - `ec2:ResourceTag/Project = minecraft-server` 条件付き
+- `ec2:DescribeInstances`
+- `ssm:SendCommand`
+- `ssm:GetCommandInvocation`
+- DynamoDB 読み取り
+- CloudWatch Logs 書き込み
 
-```json
-[
-  "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
-  {
-    "Effect": "Allow",
-    "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
-    "Resource": "arn:aws:logs:{region}:{account}:log-group:/minecraft/ec2/*"
-  }
-]
-```
+#### `player-event-processor`
+
+- DynamoDB 読み書き
+- SecretsManager 読み取り
+- CloudWatch Logs 書き込み
+
+#### EC2 Instance Role
+
+- `AmazonSSMManagedInstanceCore`
+- `/minecraft/ec2/*` への CloudWatch Logs 書き込み
+- backup bucket への S3 読み書き
 
 ### 4.6 Secrets Manager
 
-| シークレット名 | 内容 | アクセス元 | 備考 |
-|--------------|------|-----------|------|
-| `/minecraft/discord-token` | Discord Bot Token | 処理 Lambda | 手動設定 |
-| `/minecraft/discord-public-key` | Discord Public Key | 受付 Lambda | 手動設定 |
-| `/minecraft/discord-application-id` | Discord Application ID | 両 Lambda | 手動設定 |
-| `/minecraft/rcon-password` | RCON パスワード | EC2 (Ansible配置) | 任意の強力なパスワードを手動設定 |
+| シークレット名 | 用途 |
+|--------------|------|
+| `/minecraft/discord-token` | slash command 登録 script 用 |
+| `/minecraft/discord-public-key` | Discord 署名検証 |
+| `/minecraft/discord-application-id` | interaction 処理 / command 登録 |
+| `/minecraft/rcon-password` | Ansible から `server.properties` / `mcserver.cfg` へ反映 |
+| `/minecraft/player-event-webhook-url` | join / leave 通知先 |
 
-### 4.7 CloudWatch Logs 設計
-
-| ロググループ | ソース | 保持期間 |
-|------------|--------|---------|
-| `/minecraft/lambda/discord-handler` | 受付 Lambda | 14日 |
-| `/minecraft/lambda/command-processor` | 処理 Lambda | 14日 |
-| `/minecraft/ec2/minecraft-server` | Minecraft サーバーログ | 30日 |
-| `/minecraft/ec2/system` | systemd ジャーナル | 14日 |
+補足:
+- `command-processor` は Discord Bot Token を使わず、interaction follow-up webhook を直接呼ぶ
 
 ---
 
-## 5. コマンド仕様
+## 5. EC2 / Ansible 設計
 
-### 5.1 共通フロー
+### 5.1 Playbook 構成
 
-```
-Discord → 受付Lambda → 即座に ACK (type:5) → Discord に「処理中...」表示
-                    → 処理Lambda を非同期 Invoke
-                         ↓ 処理完了
-                    Discord follow-up webhook で結果送信
-```
+playbook 本体:
+- `infra/ansible/playbooks/site.yml`
 
-### 5.2 /mc start
+inventory:
+- `infra/ansible/inventory/production/hosts.yml`
+- `infra/ansible/inventory/production/group_vars/all.yml`
 
-```
-1. EC2 DescribeInstances で現在の状態を確認
-2. 状態が "running" → follow-up: "✅ サーバーは既に起動中です" → 終了
-3. 状態が "stopped" → StartInstances 呼び出し
-4. EC2 が "running" になるまでポーリング（10秒間隔、最大 3分）
-   - タイムアウト → follow-up: "⚠️ EC2起動タイムアウト" → 終了
-5. SSM で mc-status 実行（サーバーが既に起動しているか確認）
-6. Minecraft サーバーが停止中 → SSM で mc-start 実行
-7. follow-up: "✅ サーバーを起動しました\n接続先: {Elastic IP}:25565"
-```
+接続方式:
+- `amazon.aws.aws_ssm`
 
-### 5.3 /mc stop
+### 5.2 Role 構成
 
-```
-1. EC2 DescribeInstances で現在の状態を確認
-2. 状態が "stopped" → follow-up: "✅ サーバーは既に停止中です" → 終了
-3. 状態が "running" →
-   a. SSM で mc-stop 実行（Minecraft を安全にシャットダウン）
-   b. SSM コマンド完了を待機（最大 60秒）
-   c. StopInstances 呼び出し
-4. follow-up: "✅ サーバーを停止しました"
-```
+| Role | 役割 |
+|------|------|
+| `common` | ユーザー作成、ディレクトリ作成 |
+| `java` | Java 21 Corretto 導入 |
+| `linuxgsm` | LinuxGSM 導入と `mcserver` 初期化 |
+| `minecraft` | Mojang metadata から jar 取得、設定ファイル配置 |
+| `wrapper-scripts` | `mc-*` 配置 |
+| `monitoring` | CloudWatch Agent 導入 |
 
-### 5.4 /mc status
+### 5.3 Minecraft 設定
 
-```
-1. EC2 DescribeInstances で現在の状態を確認
-2. 状態が "running" →
-   a. SSM で mc-status 実行
-   b. 結果をパース
-3. follow-up: EC2状態 + Minecraft状態 + 接続先IP（起動時のみ）
-```
+現在の既定値:
 
-### 5.5 エラーハンドリング（全コマンド共通）
+| 項目 | 値 |
+|-----|---|
+| バージョン | `1.21.11` |
+| port | `25565` |
+| query port | `25565` |
+| rcon port | `25575` |
+| memory min | `1G` |
+| memory max | `2500M` |
+| LinuxGSM `javaram` | `2500` |
+| max players | `20` |
+| MOTD | `Minecraft Server` |
+| whitelist | `true` |
 
-- すべての処理を try-catch で囲む
-- AWS API エラー、SSM コマンド失敗、タイムアウトのいずれの場合も
-  follow-up webhook で Discord にエラーメッセージを送信する
-- エラー時は必ず CloudWatch Logs に詳細を記録する
+`server.properties`:
+- `enable-rcon=true`
+- `enable-query=true`
+- `white-list=true`
+- `server-ip=` のまま
 
----
+### 5.4 CloudWatch Agent
 
-## 6. Lambda インターフェース定義
+収集対象:
+- `{{ minecraft_server_dir }}/logs/latest.log`
 
-### 6.1 受付 Lambda → 処理 Lambda ペイロード
+送信先 LogGroup:
+- `/minecraft/ec2/minecraft-server`
 
-```typescript
-interface CommandPayload {
-  commandName: 'start' | 'stop' | 'status';  // コマンド種別
-  applicationId: string;                       // Discord Application ID
-  interactionToken: string;                    // follow-up webhook に使用
-  userId: string;                              // 実行したユーザーのDiscord ID
-}
-```
-
-### 6.2 SSM ヘルパー擬似コード
-
-```typescript
-// SSMコマンド実行と結果待機のパターン
-async function runSSMCommand(instanceId: string, command: string): Promise<string> {
-  // 1. SendCommand でコマンド送信
-  const sendResult = await ssm.sendCommand({
-    InstanceIds: [instanceId],
-    DocumentName: 'AWS-RunShellScript',
-    Parameters: { commands: [command] }
-  });
-  const commandId = sendResult.Command.CommandId;
-
-  // 2. GetCommandInvocation でポーリング（2秒間隔、最大30回 = 60秒）
-  for (let i = 0; i < 30; i++) {
-    await sleep(2000);
-    const result = await ssm.getCommandInvocation({
-      CommandId: commandId,
-      InstanceId: instanceId
-    });
-    if (result.Status === 'Success') return result.StandardOutputContent;
-    if (['Failed', 'Cancelled', 'TimedOut'].includes(result.Status)) {
-      throw new Error(`SSM command failed: ${result.Status}`);
-    }
-  }
-  throw new Error('SSM command polling timeout');
-}
-```
-
-### 6.3 Discord follow-up webhook 送信
-
-```typescript
-// follow-up webhook の送信パターン
-async function sendFollowup(applicationId: string, token: string, content: string): Promise<void> {
-  const url = `https://discord.com/api/v10/webhooks/${applicationId}/${token}`;
-  await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content })
-  });
-}
-```
+旧仕様書にあった `/minecraft/ec2/system` は現在の実装には存在しない。
 
 ---
 
-## 7. Ansible 設計
+## 6. Wrapper Script 仕様
 
-### 7.1 Role 構成
+配置される script:
+- `mc-start`
+- `mc-stop`
+- `mc-stop-no-backup`
+- `mc-status`
+- `mc-command`
+- `mc-backup`
+- `mc-restore`
 
-```
-infra/ansible/
-├── site.yml
-├── inventory/
-│   └── hosts.yml
-├── group_vars/
-│   └── all.yml
-└── roles/
-    ├── common/           # OS基本設定、minecraft ユーザー作成
-    ├── java/             # Java 21 (Amazon Corretto) インストール
-    ├── linuxgsm/         # LinuxGSM インストール・設定
-    ├── minecraft/        # server.properties, RCON設定, systemd unit
-    ├── wrapper-scripts/  # /usr/local/bin/mc-* スクリプト配置
-    └── monitoring/       # CloudWatch Agent 設定
-```
+### 6.1 `mc-stop`
 
-### 7.2 Ansible 変数 (inventory/production/group_vars/all.yml)
+処理順:
+1. `save-off`
+2. `save-all`
+3. LinuxGSM stop
+4. `mc-backup`
 
-```yaml
-# ユーザー・パス
-minecraft_user: minecraft
-minecraft_home: /home/minecraft
-linuxgsm_dir: "{{ minecraft_home }}/linuxgsm"
-minecraft_server_dir: "{{ linuxgsm_dir }}/serverfiles"
+### 6.2 `mc-backup`
 
-# サーバー設定
-minecraft_version: "1.21.4"
-minecraft_port: 25565
-# t4g.medium (4GB RAM) 向けヒープ設定
-# OS + JVM非ヒープ (~800MB) を除いた残りをヒープに割り当て
-# MODパック利用時は t4g.large に変更し minecraft_memory_max: "6G" へ
-minecraft_memory_max: "2500M"
-minecraft_memory_min: "1G"
+`serverfiles` 全体を tar.gz 化して S3 へ保存する。
 
-# RCON設定
-rcon_port: 25575
-rcon_password: "{{ lookup('aws_ssm', '/minecraft/rcon-password', region='ap-northeast-1') }}"
+保存先:
+- bucket: `Lambda` stack の `AnsibleSsmBucket`
+- prefix: `world-backups`
+- keys:
+  - `world-backups/latest.tar.gz`
+  - `world-backups/minecraft-serverfiles-<timestamp>.tar.gz`
 
-# ラッパースクリプト
-wrapper_scripts_dir: /usr/local/bin
+### 6.3 `mc-restore`
 
-# CloudWatch Logs
-cloudwatch_log_group_prefix: /minecraft/ec2
-aws_region: ap-northeast-1
-```
+処理順:
+1. `latest.tar.gz` の存在確認
+2. S3 から archive を取得
+3. `serverfiles` 配下を空にする
+4. archive を展開
 
-### 7.3 SSMラッパースクリプト仕様
+重要:
+- restore は破壊的
+- `world` だけでなく `serverfiles` 全体を復元する
 
-すべて `/usr/local/bin/` に配置。`chmod 755`。root 実行時に `sudo -u minecraft` でユーザー切り替え。
+### 6.4 `mc-stop-no-backup`
 
-#### mc-start
+restore 前専用の停止処理。
 
-```bash
-#!/bin/bash
-set -euo pipefail
-sudo -u minecraft /home/minecraft/linuxgsm/mcserver start
-echo "STATUS:OK"
-```
+処理順:
+1. `save-off`
+2. `save-all`
+3. LinuxGSM stop
 
-#### mc-stop
-
-```bash
-#!/bin/bash
-set -euo pipefail
-sudo -u minecraft /home/minecraft/linuxgsm/mcserver stop
-echo "STATUS:OK"
-```
-
-#### mc-status
-
-```bash
-#!/bin/bash
-set -euo pipefail
-sudo -u minecraft /home/minecraft/linuxgsm/mcserver details 2>&1 || true
-echo "STATUS:OK"
-```
-
-#### mc-command（将来用 - 空ファイルとして配置）
-
-```bash
-#!/bin/bash
-set -euo pipefail
-# TODO: 将来の /mc cmd 実装時にここを実装する
-# COMMAND="$1"
-# RCON_PASSWORD=$(cat /home/minecraft/.rcon_password)
-# mcrcon -H 127.0.0.1 -P 25575 -p "$RCON_PASSWORD" "$COMMAND"
-echo "STATUS:NOT_IMPLEMENTED"
-exit 1
-```
-
-### 7.4 server.properties テンプレートの重要設定
-
-```properties
-# RCON設定（必須）
-enable-rcon=true
-rcon.port=25575
-rcon.password={{ rcon_password }}
-server-ip=127.0.0.1   # localhost のみリッスン
-
-# 基本設定
-server-port={{ minecraft_port }}
-max-players=20
-motd=Minecraft Server
-
-# eula は eula.txt で true に設定すること
-```
+backup を取らない理由:
+- `latest.tar.gz` を直前状態で上書きしないため
 
 ---
 
-## 8. ディレクトリ構成
+## 7. Discord コマンド仕様
 
-```
-minecraft-discord-server/
-├── infra/
-│   ├── cdk/
-│   │   ├── bin/
-│   │   │   └── app.ts                  # CDK App エントリーポイント
-│   │   ├── lib/
-│   │   │   ├── network-stack.ts        # Security Group, Elastic IP
-│   │   │   ├── compute-stack.ts        # EC2, IAM Instance Profile
-│   │   │   └── lambda-stack.ts         # Lambda x2, Function URL, Secrets
-│   │   ├── cdk.json
-│   │   ├── tsconfig.json
-│   │   └── package.json
-│   └── ansible/
-│       ├── site.yml
-│       ├── inventory/
-│       │   └── hosts.yml
-│       ├── group_vars/
-│       │   └── all.yml
-│       └── roles/
-│           ├── common/
-│           ├── java/
-│           ├── linuxgsm/
-│           ├── minecraft/
-│           ├── wrapper-scripts/
-│           └── monitoring/
-├── services/
-│   ├── discord-handler/                # 受付 Lambda
-│   │   ├── src/
-│   │   │   ├── index.ts               # エントリーポイント
-│   │   │   ├── verify.ts              # Discord 署名検証
-│   │   │   └── router.ts              # コマンドルーティング → 処理Lambda Invoke
-│   │   ├── tsconfig.json
-│   │   └── package.json
-│   ├── command-processor/              # 処理 Lambda
-│   │   ├── src/
-│   │   │   ├── index.ts               # エントリーポイント
-│   │   │   ├── commands/
-│   │   │   │   ├── start.ts
-│   │   │   │   ├── stop.ts
-│   │   │   │   └── status.ts
-│   │   │   ├── aws/
-│   │   │   │   ├── ec2.ts             # EC2操作ヘルパー
-│   │   │   │   └── ssm.ts             # SSM操作ヘルパー（ポーリング含む）
-│   │   │   └── discord/
-│   │   │       └── followup.ts        # follow-up webhook 送信
-│   │   ├── tsconfig.json
-│   │   └── package.json
-│   └── shared/                         # 共通型定義・設定
-│       ├── src/
-│       │   ├── types.ts               # CommandPayload 等の型定義
-│       │   └── config.ts              # 環境変数読み取り・バリデーション
-│       ├── tsconfig.json
-│       └── package.json
-├── docs/
-│   ├── architecture.md                 # アーキテクチャ・責務分離説明
-│   ├── setup.md                        # 詳細セットアップ手順
-│   └── commands.md                     # コマンド一覧
-├── .gitignore
-├── package.json                        # npm workspaces 設定
-├── tsconfig.base.json
-└── README.md                           # クイックスタート
+### `/mc start`
+
+- EC2 が stopped なら起動して SSM ready 待ち
+- Minecraft が止まっていれば `mc-start`
+- 接続先 IP を返す
+
+### `/mc stop`
+
+- `mc-stop`
+- DynamoDB 上の online セッションを close
+- EC2 stop
+
+### `/mc status`
+
+- EC2 状態を返す
+- running のときは `mc-status` を叩き、Minecraft Server Details だけ整形して返す
+- RCON password 行は除外する
+
+### `/mc cmd`
+
+許可済み allowlist のみ実行する。
+
+初期 allowlist:
+- `list`
+- `say ...`
+- `save-all`
+- `save-on`
+- `save-off`
+- `time set day|night|noon|midnight`
+- `weather clear|rain|thunder`
+- `difficulty peaceful|easy|normal|hard`
+
+### `/mc restore`
+
+現在の仕様は次の 2 段階。
+
+1. `/mc restore`
+   - 確認用の ephemeral メッセージを返す
+   - `Restore を実行` / `キャンセル` ボタンを表示
+2. `Restore を実行`
+   - 元メッセージを「restore を開始しました」に更新
+   - 非同期で restore を実行
+   - 完了後、follow-up で結果を返す
+
+restore 実行フロー:
+
+```text
+running:
+  mc-stop-no-backup
+  -> mc-restore
+  -> mc-start
+
+stopped:
+  EC2 start
+  -> wait for SSM
+  -> mc-restore
+  -> mc-start
 ```
 
----
+### whitelist / admin / gamemode / playtime
 
-## 9. 環境変数
-
-### 受付 Lambda
-
-| 変数名 | 説明 |
-|--------|------|
-| `DISCORD_PUBLIC_KEY_SECRET_ARN` | Secrets Manager ARN (discord-public-key) |
-| `DISCORD_APP_ID_SECRET_ARN` | Secrets Manager ARN (discord-application-id) |
-| `PROCESSOR_FUNCTION_NAME` | 処理 Lambda の関数名 |
-
-### 処理 Lambda
-
-| 変数名 | 説明 |
-|--------|------|
-| `EC2_INSTANCE_ID` | 操作対象 EC2 の Instance ID |
-| `DISCORD_TOKEN_SECRET_ARN` | Secrets Manager ARN (discord-token) |
-| `DISCORD_APP_ID_SECRET_ARN` | Secrets Manager ARN (discord-application-id) |
+- `whitelist`
+  - `add/remove/list/on/off`
+- `admin`
+  - `grant/revoke`
+- `gamemode`
+  - `survival/creative/adventure/spectator`
+- `playtime`
+  - `player <name>`
+  - `top`
 
 ---
 
-## 10. 使用ライブラリ
+## 8. プレイヤーイベント集計
 
-### discord-handler (受付 Lambda)
+`player-event-processor` は CloudWatch Logs subscription から `joined the game` / `left the game` を検出する。
 
-```json
-{
-  "dependencies": {
-    "discord-interactions": "^3.4.0",
-    "@aws-sdk/client-lambda": "^3.0.0",
-    "@aws-sdk/client-secrets-manager": "^3.0.0"
-  }
-}
-```
+保存先:
+- DynamoDB `minecraft-player-stats`
 
-### command-processor (処理 Lambda)
+保存項目:
+- `playerName`
+- `online`
+- `totalPlaySeconds`
+- `currentSessionStartedAt`
+- `lastJoinAt`
+- `lastLeaveAt`
+- `joinCount`
 
-```json
-{
-  "dependencies": {
-    "@aws-sdk/client-ec2": "^3.0.0",
-    "@aws-sdk/client-ssm": "^3.0.0",
-    "@aws-sdk/client-secrets-manager": "^3.0.0"
-  }
-}
-```
+通知:
+- `/minecraft/player-event-webhook-url` の Discord Webhook へ POST
 
 ---
 
-## 11. 手動で行う前提作業（AIエージェントでは実行不可）
+## 9. データストア
 
-以下は **デプロイ前に人間が手動で実施する**。
+### 9.1 S3
 
-1. **AWS アカウント・CLI 設定**
-   - `aws configure` または IAM Identity Center 設定
-   - デプロイ先リージョンの確認
+用途:
+- Ansible `aws_ssm` connection の中継
+- Minecraft backup 保存先
 
-2. **CDK Bootstrap**
-   ```bash
-   cdk bootstrap aws://{ACCOUNT_ID}/{REGION}
-   ```
+設定:
+- versioning 有効
+- S3 managed encryption
+- block public access
+- `autoDeleteObjects: true`
+- removalPolicy は app config 依存
 
-3. **Discord Developer Portal 設定**
-   - https://discord.com/developers/applications でアプリを作成
-   - 以下を取得してメモ:
-     - `APPLICATION_ID`
-     - `PUBLIC_KEY`
-     - `BOT_TOKEN`
-   - Slash Command 登録:
-     ```
-     /mc start  - Minecraftサーバーを起動します
-     /mc stop   - Minecraftサーバーを停止します
-     /mc status - サーバーの状態を確認します
-     ```
+注意:
+- `dev` 既定では `RemovalPolicy.DESTROY`
+- backup 保存先としては恒久運用向きではない
 
-4. **Secrets Manager に値を登録**
-   ```bash
-   aws secretsmanager put-secret-value --secret-id /minecraft/discord-token      --secret-string "YOUR_BOT_TOKEN"
-   aws secretsmanager put-secret-value --secret-id /minecraft/discord-public-key --secret-string "YOUR_PUBLIC_KEY"
-   aws secretsmanager put-secret-value --secret-id /minecraft/discord-application-id --secret-string "YOUR_APP_ID"
-   aws secretsmanager put-secret-value --secret-id /minecraft/rcon-password      --secret-string "YOUR_STRONG_RCON_PASSWORD"
-   ```
+### 9.2 DynamoDB
 
-5. **Discord の Interactions Endpoint URL 設定**
-   - CDK デプロイ後に Lambda Function URL が生成される
-   - Discord Developer Portal の「Interactions Endpoint URL」に設定
-   - Discord 側で疎通確認（PING/PONG）
+テーブル:
+- `minecraft-player-stats`
+
+用途:
+- プレイ時間集計
+- online 状態
+- join / leave 履歴
 
 ---
 
-## 12. 各フェーズの検証基準
+## 10. ログ
 
-| フェーズ | 完了条件 |
-|---------|---------|
-| CDK (Phase 2-4) | `cdk synth` 成功。SG・EBS・IAMポリシーを目視確認 |
-| Lambda (Phase 5-7) | TypeScript コンパイル成功。単体テスト全通過 |
-| Ansible (Phase 8-10) | `ansible-playbook --check` エラーなし |
-| EC2実機 | `mc-status`, `mc-start`, `mc-stop` がSSMから実行できる |
-| 結合 | Discordから3コマンド全て正常動作 |
+主要 LogGroup:
+- `/minecraft/lambda/discord-handler`
+- `/minecraft/lambda/command-processor`
+- `/minecraft/lambda/player-event-processor`
+- `/minecraft/ec2/minecraft-server`
 
 ---
 
-## 13. 将来拡張 TODO
+## 11. 開発 / 運用フロー
 
-以下は PoC 完成後に実装予定。コード内にも `// TODO:` コメントを残すこと。
+標準的な反映順:
 
-| 機能 | 概要 | 追加が必要なもの |
-|-----|------|---------------|
-| `/mc cmd <command>` | Minecraftコマンドを直接実行 | mc-command スクリプト実装、RCON クライアント、Lambda コマンドハンドラ追加 |
-| `/mc backup` | ワールドをS3に手動バックアップ | S3バケット (CDK)、mc-backup スクリプト、Lambda ハンドラ |
-| `/mc debug` | ログ・状態情報を収集 | ログ収集スクリプト、長文時S3アップロード→URL返却パターン |
-| プレイヤー通知 | ログイン/ログアウトをDiscordに通知 | CloudWatch Logs サブスクリプション → Lambda → Discord Webhook |
-| 自動停止 | アイドル時間が一定以上で自動停止 | EventBridge Scheduler、プレイヤー数確認スクリプト |
-| 複数サーバー対応 | サーバーを複数管理 | DynamoDB でサーバーメタデータ管理、コマンドに `--server` オプション追加 |
+1. `aws login`
+2. `npm install`
+3. `npm run typecheck`
+4. `npm run test`
+5. `make cdk-deploy`
+6. Secrets Manager に必要値を投入
+7. `make register-commands`
+8. Discord Developer Portal に Function URL を設定
+9. `make ansible-ssm-op`
+
+主な運用コマンド:
+- `make cdk-synth`
+- `make cdk-diff`
+- `make cdk-deploy`
+- `make ansible-ssm`
+- `make ansible-ssm-check`
+- `make ansible-ssm-op`
+- `make ansible-ssm-op-check`
+- `make ssm-session`
 
 ---
 
-## 14. セキュリティチェックリスト
+## 12. 現在の注意点
 
-デプロイ前に以下を確認すること。
+- backup bucket は Ansible SSM 用 bucket と共用している
+- restore は `serverfiles` 全体を消して展開するため破壊的
+- `Compute` は backup 用 bucket を参照するため `Lambda` stack に依存する
+- stopped 状態から `/mc restore` した場合、restore 後は EC2 も Minecraft も起動したままになる
+- `dev` 既定では stateful resource も `DESTROY` のため、本番用途では removal policy の見直しが必要
 
-- [ ] Security Group に RCON ポート (25575) の Inbound ルールがないこと
-- [ ] server.properties の `server-ip` が `127.0.0.1` に設定されていること
-- [ ] Secrets Manager にシークレット値が正しく設定されていること
-- [ ] Lambda IAM Role が最小権限になっていること（`ec2:*` 等の広すぎる権限がないこと）
-- [ ] `.gitignore` にシークレット・認証情報ファイルが含まれていること
-- [ ] EBS の `deleteOnTermination` が `false` であること（ワールドデータ保護）
-- [ ] Discord 署名検証が受付 Lambda の最初の処理として実装されていること
