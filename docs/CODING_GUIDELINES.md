@@ -35,6 +35,8 @@
 
 人間による実装・AI による実装の両方に適用する。
 
+CDK を使用する場合は、本規約に加えて `CDK_GUIDELINES.md` も適用する。
+
 ---
 
 ## 4. 命名規則
@@ -172,6 +174,63 @@ const getUser = (id: string): User => {
 
 ---
 
+## 7.5 非同期処理
+
+非同期処理は async / await を使用する。Promise チェーン（`.then().catch()`）の raw 使用は避ける。
+
+```ts
+// NG: Promise チェーン
+getUserById(id)
+  .then(user => sendEmail(user))
+  .catch(error => logger.error(error))
+
+// OK: async / await
+const user = await getUserById(id)
+await sendEmail(user)
+```
+
+---
+
+### 複数の非同期処理
+
+並列実行できる処理は `Promise.all` を使用する。
+一つでも失敗したら全体を失敗とする場合は `Promise.all`、
+部分的な成功を許容する場合は `Promise.allSettled` を使用する。
+
+```ts
+// 並列実行（どれか一つでも失敗したら全体失敗）
+const [user, orders] = await Promise.all([
+  getUser(userId),
+  getOrders(userId),
+])
+
+// 部分的な成功を許容する場合
+const results = await Promise.allSettled([
+  sendEmailNotification(userId),
+  sendPushNotification(userId),
+])
+```
+
+---
+
+### 未処理の Promise rejection
+
+`await` を付け忘れた場合や、catch のない Promise は未処理の rejection を生む。
+バックグラウンドで実行する処理も必ずエラーハンドリングを行う。
+
+```ts
+// NG: await なし（エラーが握りつぶされる）
+sendNotification(userId)
+
+// OK: await してエラーを処理する
+await sendNotification(userId)
+
+// バックグラウンド実行が必要な場合も catch は必須
+sendNotification(userId).catch(error => logger.error(error))
+```
+
+---
+
 ## 8. TypeScript ルール
 
 ### strict モード
@@ -262,6 +321,31 @@ function process(value: unknown) {
 
 ---
 
+### Enum
+
+TypeScript の `enum` は使用しない。代わりに `as const` + ユニオン型を使用する。
+
+`enum` はツリーシェイキングされないコードを生成し、数値 enum は型安全性が低いため。
+
+```ts
+// NG: enum
+enum UserRole {
+  Admin = "admin",
+  Member = "member",
+}
+
+// OK: as const + union type
+const USER_ROLE = {
+  Admin: "admin",
+  Member: "member",
+} as const
+
+type UserRole = typeof USER_ROLE[keyof typeof USER_ROLE]
+// "admin" | "member"
+```
+
+---
+
 ## 9. 条件分岐
 
 比較には厳密等価演算子を使用する。
@@ -307,6 +391,74 @@ import { formatDate } from "./utils"
 ```
 
 同一モジュールの import はまとめる。ワイルドカード import は避ける。
+
+---
+
+### パスエイリアス（@/）
+
+内部モジュールの import には `@/` エイリアスを使用する。
+相対パスが2階層以上深くなる場合は必ず `@/` に切り替える。
+
+```ts
+// NG: 深い相対パス（読みにくく、ファイル移動時に壊れやすい）
+import { UserService } from "../../../services/user"
+
+// OK: @/ エイリアス（常に一定で読みやすい）
+import { UserService } from "@/services/user"
+```
+
+環境別の設定方法は以下のとおり。いずれの環境でも `tsconfig.json` の設定は共通で必要。
+
+**tsconfig.json（全環境共通）**
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  }
+}
+```
+
+**Next.js**
+
+`tsconfig.json` の設定のみで動作する。Next.js が内部でエイリアスを解決する。
+
+**Vite（React 等）**
+
+`vite.config.ts` に追加の設定が必要。
+
+```ts
+import { defineConfig } from "vite"
+import path from "path"
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+    },
+  },
+})
+```
+
+**Node.js（バックエンド）**
+
+実行時のパス解決のために `tsconfig-paths` が必要。
+
+```bash
+npm install -D tsconfig-paths
+```
+
+```json
+// package.json
+{
+  "scripts": {
+    "dev": "ts-node -r tsconfig-paths/register src/index.ts"
+  }
+}
+```
 
 ---
 
@@ -415,6 +567,85 @@ catch (error) {
 
 ---
 
+### カスタムエラークラス
+
+エラーは目的に応じたクラスを作成する。
+エラーの種類をクラスで表現することで、上位層でのハンドリングが明確になる。
+
+```ts
+// 基底クラス
+class AppError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+  ) {
+    super(message)
+    this.name = this.constructor.name
+  }
+}
+
+// 種別ごとのエラークラス
+class NotFoundError extends AppError {
+  constructor(resource: string) {
+    super(`${resource} が見つかりません`, "NOT_FOUND")
+  }
+}
+
+class PermissionError extends AppError {
+  constructor() {
+    super("権限がありません", "PERMISSION_DENIED")
+  }
+}
+```
+
+---
+
+### レイヤー間のエラー伝搬
+
+エラーは各レイヤーの責務に合わせて変換する。
+repository 層のエラーをそのまま controller 層まで伝播させない。
+
+```ts
+// repository 層: DB エラーをドメインエラーに変換する
+class UserRepository {
+  async findById(id: string): Promise<User> {
+    try {
+      return await db.users.findOne({ id })
+    } catch (error) {
+      logger.error(error)
+      throw new DatabaseError("ユーザー取得に失敗しました")
+    }
+  }
+}
+
+// service 層: ドメインルールに基づくエラーを投げる
+class UserService {
+  async getUser(id: string): Promise<User> {
+    const user = await this.repository.findById(id)
+    if (!user) {
+      throw new NotFoundError("ユーザー")
+    }
+    return user
+  }
+}
+
+// controller 層: エラー種別に応じて HTTP レスポンスに変換する
+const handler = async (req, res) => {
+  try {
+    const user = await userService.getUser(req.params.id)
+    res.json(user)
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      res.status(404).json({ message: error.message })
+    } else {
+      res.status(500).json({ message: "サーバーエラー" })
+    }
+  }
+}
+```
+
+---
+
 ## 13. ログ
 
 ログは以下を満たすこと。
@@ -475,7 +706,38 @@ src/
 
 - feature 間は直接 import せず、`index.ts` 経由でアクセスする
 - 特定の feature にのみ依存するコードは `shared/` に置かない
-- コンポーネントは presentational と container に分けることを検討する
+- コンポーネントは表示責務（presentational）と状態管理・副作用（container/hooks）を分離することを意識する
+- Next.js App Router を使用する場合は Server Components / Client Components を適切に使い分ける
+
+---
+
+#### Next.js App Router での Server / Client Components の使い分け
+
+App Router を使用する場合は、データ取得・非インタラクティブな描画は Server Components、インタラクティブな操作・ブラウザ API は Client Components で実装する。
+
+| 処理の種類 | 推奨 |
+|------------|------|
+| データ取得（DB・API） | Server Components |
+| 認証チェック・リダイレクト | Server Components |
+| インタラクティブな UI（onClick 等） | Client Components |
+| ブラウザ API（localStorage 等） | Client Components |
+| 状態管理（useState・useEffect） | Client Components |
+
+```tsx
+// Server Component（デフォルト）
+const UserProfile = async ({ userId }: { userId: string }) => {
+  // サーバーサイドで直接 DB にアクセスできる
+  const user = await getUserById(userId)
+  return <div>{user.name}</div>
+}
+
+// Client Component（"use client" ディレクティブが必要）
+"use client"
+const LikeButton = ({ postId }: { postId: string }) => {
+  const [liked, setLiked] = useState(false)
+  return <button onClick={() => setLiked(!liked)}>...</button>
+}
+```
 
 ---
 
@@ -501,6 +763,51 @@ src/
 - 機密情報のログ出力
 
 外部入力は必ず検証する。
+
+---
+
+### 入力バリデーションとサニタイズ
+
+外部入力（API リクエスト・環境変数・ファイル等）は受け取り口で検証する。
+バリデーションには zod などのスキーマバリデーションライブラリを使用する。
+
+```ts
+const createUserSchema = z.object({
+  name: z.string().min(1).max(100),
+  email: z.string().email(),
+})
+
+const body = createUserSchema.parse(req.body)
+```
+
+---
+
+### XSS 対策
+
+フロントエンドでユーザー入力をそのまま HTML に埋め込まない。
+
+```tsx
+// NG: dangerouslySetInnerHTML は原則禁止
+<div dangerouslySetInnerHTML={{ __html: userInput }} />
+
+// OK: テキストとして扱う
+<div>{userInput}</div>
+```
+
+---
+
+### 認証トークンの取り扱い
+
+- JWT / セッショントークンは `HttpOnly Cookie` で管理する
+- `localStorage` への認証トークン保存は XSS で窃取されるリスクがあるため禁止する
+- API キーなどの機密情報は環境変数で管理し、クライアントサイドに露出させない
+
+---
+
+### CORS
+
+API サーバーの CORS 設定は必要最小限のオリジンのみ許可する。
+`Access-Control-Allow-Origin: *` の本番環境での使用は禁止する。
 
 ---
 
@@ -608,11 +915,28 @@ expect(result.id).toBe(user.id)
 
 CI では以下を必須とする。
 
-- lint
+- lint（ESLint）
+- format check（Prettier）
 - typecheck
 - unit test
 
 CI が失敗している場合はマージ不可とする。
+
+---
+
+### ESLint / Prettier
+
+プロジェクト内で ESLint と Prettier の設定を統一する。
+
+ESLint の方針:
+- `@typescript-eslint/recommended` を基本とする
+- `no-console` を有効にし、logger 経由でのみ出力する
+- `no-unused-vars` を有効にする
+- ルールの無効化（`eslint-disable`）はコメントで理由を明記した場合のみ許容する
+
+Prettier の方針:
+- プロジェクト内で設定ファイルを共有し、フォーマットをツールに委ねる
+- コードスタイルについて議論しない
 
 ---
 

@@ -3,6 +3,7 @@
 - `/mc start`: EC2 を起動し、必要なら Minecraft サーバーも起動する
 - `/mc stop`: Minecraft を停止してから EC2 を停止する
 - `/mc status`: EC2 と Minecraft の状態、および接続先IPを確認する
+- `/mc restore`: 停止中 EC2 を一時起動して latest backup を restore し、完了後に再停止する
 - `/mc cmd`: 許可された Minecraft コマンドを実行する
   - 初期 allowlist: `list`, `say ...`, `save-all`, `save-on`, `save-off`, `time set ...`, `weather ...`, `difficulty ...`
 - `/mc whitelist add/remove/list/on/off`: ホワイトリストを管理する

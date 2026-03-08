@@ -1,0 +1,41 @@
+#!/bin/bash
+set -euo pipefail
+
+readonly CONFIG_PATH="/etc/minecraft-backup.env"
+
+if [[ ! -f "${CONFIG_PATH}" ]]; then
+  echo "backup config not found: ${CONFIG_PATH}" >&2
+  exit 1
+fi
+
+source "${CONFIG_PATH}"
+
+if [[ -z "${MINECRAFT_BACKUP_BUCKET:-}" || -z "${MINECRAFT_SERVER_DIR:-}" ]]; then
+  echo "backup config is incomplete" >&2
+  exit 1
+fi
+
+if [[ ! -d "${MINECRAFT_SERVER_DIR}" ]]; then
+  echo "server directory not found: ${MINECRAFT_SERVER_DIR}" >&2
+  exit 1
+fi
+
+readonly BACKUP_PREFIX="${MINECRAFT_BACKUP_PREFIX:-world-backups}"
+readonly TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+readonly ARCHIVE_NAME="minecraft-serverfiles-${TIMESTAMP}.tar.gz"
+readonly LATEST_KEY="${BACKUP_PREFIX}/latest.tar.gz"
+readonly VERSIONED_KEY="${BACKUP_PREFIX}/${ARCHIVE_NAME}"
+readonly TMP_ARCHIVE="$(mktemp /tmp/minecraft-backup.XXXXXX.tar.gz)"
+
+cleanup() {
+  rm -f "${TMP_ARCHIVE}"
+}
+trap cleanup EXIT
+
+tar -czf "${TMP_ARCHIVE}" -C "${MINECRAFT_SERVER_DIR}" .
+
+aws s3 cp "${TMP_ARCHIVE}" "s3://${MINECRAFT_BACKUP_BUCKET}/${VERSIONED_KEY}"
+aws s3 cp "${TMP_ARCHIVE}" "s3://${MINECRAFT_BACKUP_BUCKET}/${LATEST_KEY}"
+
+echo "backup uploaded to s3://${MINECRAFT_BACKUP_BUCKET}/${VERSIONED_KEY}"
+echo "STATUS:OK"

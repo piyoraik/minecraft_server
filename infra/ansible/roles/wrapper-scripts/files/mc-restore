@@ -1,0 +1,40 @@
+#!/bin/bash
+set -euo pipefail
+
+readonly CONFIG_PATH="/etc/minecraft-backup.env"
+
+if [[ ! -f "${CONFIG_PATH}" ]]; then
+  echo "backup config not found: ${CONFIG_PATH}" >&2
+  exit 1
+fi
+
+source "${CONFIG_PATH}"
+
+if [[ -z "${MINECRAFT_BACKUP_BUCKET:-}" || -z "${MINECRAFT_SERVER_DIR:-}" ]]; then
+  echo "backup config is incomplete" >&2
+  exit 1
+fi
+
+readonly BACKUP_PREFIX="${MINECRAFT_BACKUP_PREFIX:-world-backups}"
+readonly LATEST_KEY="${BACKUP_PREFIX}/latest.tar.gz"
+readonly TMP_ARCHIVE="$(mktemp /tmp/minecraft-restore.XXXXXX.tar.gz)"
+
+cleanup() {
+  rm -f "${TMP_ARCHIVE}"
+}
+trap cleanup EXIT
+
+if ! aws s3api head-object --bucket "${MINECRAFT_BACKUP_BUCKET}" --key "${LATEST_KEY}" >/dev/null 2>&1; then
+  echo "backup not found: s3://${MINECRAFT_BACKUP_BUCKET}/${LATEST_KEY}"
+  echo "STATUS:SKIPPED"
+  exit 0
+fi
+
+aws s3 cp "s3://${MINECRAFT_BACKUP_BUCKET}/${LATEST_KEY}" "${TMP_ARCHIVE}"
+
+mkdir -p "${MINECRAFT_SERVER_DIR}"
+find "${MINECRAFT_SERVER_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+tar -xzf "${TMP_ARCHIVE}" -C "${MINECRAFT_SERVER_DIR}"
+
+echo "backup restored from s3://${MINECRAFT_BACKUP_BUCKET}/${LATEST_KEY}"
+echo "STATUS:OK"

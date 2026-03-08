@@ -1,5 +1,4 @@
-import type { CommandPayload } from "../../shared/src/types"
-import { readRequiredEnv } from "../../shared/src"
+import { logger, readRequiredEnv, type CommandPayload } from "@minecraft/shared"
 
 import { createEc2Gateway, type Ec2Gateway } from "./aws/ec2"
 import { createPlayerStatsGateway, type PlayerStatsGateway } from "./aws/player-stats"
@@ -9,6 +8,7 @@ import { handleAdmin } from "./commands/admin"
 import { handleCmd } from "./commands/cmd"
 import { handleGamemode } from "./commands/gamemode"
 import { handlePlaytime } from "./commands/playtime"
+import { handleRestore } from "./commands/restore"
 import { handleStatus } from "./commands/status"
 import { handleStop } from "./commands/stop"
 import { handleWhitelist } from "./commands/whitelist"
@@ -40,6 +40,7 @@ const isCommandPayload = (value: unknown): value is CommandPayload => {
     commandName === "start" ||
     commandName === "stop" ||
     commandName === "status" ||
+    commandName === "restore" ||
     commandName === "cmd" ||
     commandName === "whitelist" ||
     commandName === "admin" ||
@@ -78,6 +79,10 @@ const isCommandPayload = (value: unknown): value is CommandPayload => {
   )
 }
 
+/**
+ * Discord から受けた正規化済みコマンドを各ユースケースへ振り分ける。
+ * Follow-up 応答までこの層で完結させ、個別コマンド実装へ Discord 依存を漏らさない。
+ */
 export const processCommand = async (
   payload: CommandPayload,
   deps: ProcessorDeps,
@@ -109,6 +114,12 @@ export const processCommand = async (
         content = await handleStatus(deps.ec2, deps.ssm, instanceId)
         break
       }
+      case "restore": {
+        const instance = await deps.ec2.findInstanceByProjectTag(projectTagValue)
+        const instanceId = instance.instanceId
+        content = await handleRestore(deps.ec2, deps.ssm, instanceId)
+        break
+      }
       case "cmd": {
         const instance = await deps.ec2.findInstanceByProjectTag(projectTagValue)
         const instanceId = instance.instanceId
@@ -137,7 +148,7 @@ export const processCommand = async (
 
     await deps.followup.send(payload.applicationId, payload.interactionToken, content)
   } catch (error) {
-    console.error("command-processor failed", {
+    logger.error("command-processor failed", {
       error,
       command: payload.commandName,
       userId: payload.userId

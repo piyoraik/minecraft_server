@@ -28,16 +28,18 @@ const networkStack = new NetworkStack(app, "Network", {
   config
 })
 
+const lambdaStack = new LambdaStack(app, "Lambda", {
+  ...stackProps,
+  config
+})
+
 const computeStack = new ComputeStack(app, "Compute", {
   ...stackProps,
+  backupBucket: lambdaStack.ansibleSsmBucket,
   config,
   vpc: networkStack.vpc,
   securityGroup: networkStack.securityGroup,
   elasticIp: networkStack.elasticIp
 })
 computeStack.addDependency(networkStack)
-
-new LambdaStack(app, "Lambda", {
-  ...stackProps,
-  config
-})
+computeStack.addDependency(lambdaStack)

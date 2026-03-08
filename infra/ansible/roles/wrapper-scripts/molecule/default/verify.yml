@@ -13,6 +13,21 @@
         path: /usr/local/bin/mc-status
       register: mc_status_script
 
+    - name: Mc-backup wrapper script が配置済みであることを確認する
+      ansible.builtin.stat:
+        path: /usr/local/bin/mc-backup
+      register: mc_backup_script
+
+    - name: Mc-restore wrapper script が配置済みであることを確認する
+      ansible.builtin.stat:
+        path: /usr/local/bin/mc-restore
+      register: mc_restore_script
+
+    - name: Backup 設定ファイルが配置済みであることを確認する
+      ansible.builtin.stat:
+        path: /etc/minecraft-backup.env
+      register: backup_config
+
     - name: Wrapper script 群が実行可能であることを確認する
       ansible.builtin.assert:
         that:
@@ -20,3 +35,8 @@
           - mc_start_script.stat.mode == "0755"
           - mc_status_script.stat.exists
           - mc_status_script.stat.mode == "0755"
+          - mc_backup_script.stat.exists
+          - mc_backup_script.stat.mode == "0755"
+          - mc_restore_script.stat.exists
+          - mc_restore_script.stat.mode == "0755"
+          - backup_config.stat.exists

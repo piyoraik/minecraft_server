@@ -1,6 +1,7 @@
 ---
 - name: Minecraft Setup
   hosts: minecraft
+  # このプレイの大半のタスクは root 権限を必要とするため Play レベルで become を設定する
   become: true
   gather_facts: false
   pre_tasks:

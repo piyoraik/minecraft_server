@@ -29,6 +29,10 @@
 
 ---
 
+> **関連規約**: CDK コードは TypeScript で記述するため、本規約に加えて `CODING_GUIDELINES.md` の TypeScript ルールも適用する。
+
+---
+
 ## 3. 推奨ディレクトリ構成
 
 推奨ディレクトリ構成は以下とする。
@@ -204,6 +208,30 @@ Construct に以下を詰め込みすぎない。
 - その Construct を使う全ての Stack に不要な機能
 - 大量の public readonly 公開
 - Stack 間依存まで隠蔽するような過剰抽象化
+
+---
+
+## 4.7 CloudFormation の制約と Stack 分割の基準
+
+CloudFormation には以下の制約がある。Stack 設計時に考慮すること。
+
+| 制約 | 上限 |
+|------|------|
+| 1 Stack あたりのリソース数 | 500 |
+| テンプレートファイルサイズ（S3 経由） | 1 MB |
+| テンプレートファイルサイズ（直接アップロード） | 51,200 バイト |
+
+リソース数が 400 を超えてきた場合は Stack 分割を検討する。
+CDK の `cdk synth` で生成された CloudFormation テンプレートのリソース数を定期的に確認する。
+
+また、以下の変更はリソースの**置換**（削除 → 再作成）を引き起こすため、特に注意する。
+
+- RDS のサブネットグループや DB インスタンスクラスの変更
+- S3 バケット名の変更
+- Cognito User Pool の変更
+- IAM Role 名を明示指定している場合の変更
+
+置換が起きるか否かは `cdk diff` の出力で確認できる。置換を伴う変更の場合は必ず人間に確認を求める。
 
 ---
 
@@ -515,6 +543,20 @@ type AlbConstructProps = {
 }
 ```
 
+ただし、以下の場合は ARN 文字列を props で受け渡すことを許容する。
+
+- CDK App の外部で管理されているリソース（別アカウント・別リポジトリ等）
+- `fromLookup` / `fromArn` が存在しないリソース
+- 設定ファイルや SSM Parameter Store から取得した外部リソースの参照
+
+```ts
+// 外部管理のリソースは ARN 文字列を許容する
+type AlbConstructProps = {
+  vpc: ec2.IVpc                // 同一 App 内 → CDK オブジェクト
+  certificateArn: string       // 外部管理の ACM 証明書 → ARN 文字列を許容
+}
+```
+
 ---
 
 ### 9.3 props は意味単位でまとめる
@@ -588,9 +630,11 @@ IAM は最小権限を原則とする。
 
 ---
 
-## 13. RemovalPolicy
+## 13. ステートフルリソースの保護
 
 ステートフルなリソース（RDS・S3・DynamoDB・ElastiCache 等）には `RemovalPolicy` を明示する。
+
+### RemovalPolicy
 
 | 環境 | 方針 |
 |------|------|
@@ -615,6 +659,45 @@ export const prodConfig = {
 ```
 
 `DESTROY` を設定する場合はコメントで理由を明記する。
+
+---
+
+### 削除保護（DeletionProtection）
+
+RDS・Aurora などのデータベースリソースは `deletionProtection: true` を本番環境で有効にする。
+`RemovalPolicy.RETAIN` と併用することでより安全に保護できる。
+
+```ts
+new rds.DatabaseInstance(this, "Database", {
+  // ...
+  deletionProtection: props.environmentName === "prod",
+  removalPolicy: props.removalPolicy,
+})
+```
+
+---
+
+### S3 の autoDeleteObjects
+
+`RemovalPolicy.DESTROY` と `autoDeleteObjects: true` の組み合わせはバケット内のオブジェクトごと削除される。
+本番環境では絶対に使用しない。
+
+```ts
+new s3.Bucket(this, "Bucket", {
+  removalPolicy: props.removalPolicy,
+  // autoDeleteObjects は dev 環境のみ許容する
+  autoDeleteObjects: props.environmentName === "dev",
+})
+```
+
+---
+
+### リソース置換への注意
+
+CDK / CloudFormation の変更によってはリソースが**削除 → 再作成（置換）**される場合がある。
+ステートフルなリソースの置換はデータ消失につながるため、`cdk diff` で必ず確認する。
+
+置換を伴う変更が検出された場合は実装を止め、人間に確認を求める。
 
 ---
 
@@ -666,6 +749,36 @@ Patterns は内部に多くのリソースを生成するため、カスタマ�
 
 ---
 
+## 15.5 Aspects
+
+CDK Aspects は、Construct ツリー全体に横断的なルールを適用する仕組みである。
+以下のユースケースに活用する。
+
+- cdk-nag によるセキュリティ・コンプライアンスチェック
+- 全リソースへのタグ強制付与
+- リソース設定の一括検証
+
+```ts
+import { Aspects } from "aws-cdk-lib"
+import { AwsSolutionsChecks } from "cdk-nag"
+
+// cdk-nag を Aspect として適用する
+Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }))
+```
+
+Aspects でタグを全リソースに強制付与する場合は `Tags.of()` を使用する。
+
+```ts
+import { Tags } from "aws-cdk-lib"
+
+// Stack または App 全体にタグを付与する
+Tags.of(app).add("Project", config.projectName)
+Tags.of(app).add("Environment", config.environmentName)
+Tags.of(app).add("ManagedBy", "CDK")
+```
+
+---
+
 ## 16. helper の扱い
 
 helper は以下に限定する。
@@ -710,6 +823,49 @@ Output は必要最小限とする。
 - `CostCenter`
 
 タグ付与は helper 化または app / stack レベルで共通適用する。
+
+---
+
+## 18.5 ログ・監視の標準設定
+
+以下はセキュリティおよび運用上、原則として有効にする。
+
+### CloudWatch Logs の保持期間
+
+CloudWatch Logs のロググループには保持期間を必ず設定する。
+設定しない場合、ログが永久に保存されコストが増大する。
+
+```ts
+import { RetentionDays } from "aws-cdk-lib/aws-logs"
+
+new logs.LogGroup(this, "AppLogGroup", {
+  retention: RetentionDays.THREE_MONTHS,  // 本番: 3〜12ヶ月
+  removalPolicy: props.removalPolicy,
+})
+```
+
+---
+
+### アクセスログの有効化
+
+以下のリソースはアクセスログを有効にする。
+
+- ALB: `loadBalancer.logAccessLogs(logBucket)`
+- S3: `serverAccessLogsBucket` を指定する
+- API Gateway: アクセスログを CloudWatch に出力する
+
+---
+
+### VPC Flow Logs
+
+本番環境では VPC Flow Logs を有効にし、ネットワークトラフィックを記録する。
+
+```ts
+vpc.addFlowLog("FlowLog", {
+  destination: ec2.FlowLogDestination.toCloudWatchLogs(),
+  trafficType: ec2.FlowLogTrafficType.ALL,
+})
+```
 
 ---
 
@@ -832,6 +988,7 @@ Claude / Codex 等の AI は以下を遵守する。
 - ステートフルなリソースには RemovalPolicy を明示する
 - `cdk synth` が通る実装にする
 - 必要な assertions テストを追加する
+- 生成したコードに対してレビュー観点（セキュリティ・置換リスク・IAM 権限過剰・削除保護の漏れ等）を自己申告する
 
 ---
 
@@ -844,6 +1001,7 @@ Claude / Codex 等の AI は以下を遵守する。
 - 既存の Construct / Stack 構造から逸脱する実装が必要な場合
 - 新規ライブラリや Patterns の追加が必要な場合
 - セキュリティ設定（IAM・SecurityGroup・暗号化）を変更する場合
+- ステートフルリソースに置換（削除 → 再作成）が発生する変更を行う場合
 
 ---
 

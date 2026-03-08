@@ -1,9 +1,11 @@
 import { Stack, type Duration } from "aws-cdk-lib"
 import * as ec2 from "aws-cdk-lib/aws-ec2"
 import * as iam from "aws-cdk-lib/aws-iam"
+import * as s3 from "aws-cdk-lib/aws-s3"
 import { Construct } from "constructs"
 
 type MinecraftServerConstructProps = {
+  backupBucket: s3.IBucket
   elasticIp: ec2.CfnEIP
   gracefulShutdownTimeout: Duration
   instanceType: string
@@ -44,6 +46,7 @@ export class MinecraftServerConstruct extends Construct {
         ]
       })
     )
+    props.backupBucket.grantReadWrite(instanceRole)
 
     // -----------------------------
     // EC2 Instance

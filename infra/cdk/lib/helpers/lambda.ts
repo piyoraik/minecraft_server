@@ -1,7 +1,7 @@
-import { existsSync } from "node:fs"
 import path from "node:path"
 
 import * as lambda from "aws-cdk-lib/aws-lambda"
+import * as lambdaNodejs from "aws-cdk-lib/aws-lambda-nodejs"
 import * as logs from "aws-cdk-lib/aws-logs"
 
 export const createLogPolicyResources = (logGroup: logs.ILogGroup): string[] => {
@@ -26,16 +26,35 @@ export const getCfnLogGroup = (logGroup: logs.ILogGroup): logs.CfnLogGroup => {
   return defaultChild
 }
 
-const resolveServiceDistPath = (serviceName: string): string => {
-  return path.resolve(process.cwd(), "../..", "services", serviceName, "dist")
+const resolveRepoRootPath = (): string => {
+  return path.resolve(process.cwd(), "../..")
 }
 
-export const createLambdaCode = (serviceName: string, fallbackCode: string): lambda.Code => {
-  const distPath = resolveServiceDistPath(serviceName)
-  if (existsSync(distPath)) {
-    return lambda.Code.fromAsset(distPath)
-  }
+const resolveServiceEntryPath = (serviceName: string): string => {
+  return path.resolve(resolveRepoRootPath(), "services", serviceName, "src", "index.ts")
+}
 
-  // ビルド前でも synth を止めないことで、インフラ差分の確認をコード生成待ちに引きずられないようにする。
-  return lambda.Code.fromInline(fallbackCode)
+/**
+ * workspace 依存を含めて Lambda を自己完結した成果物にし、配布時の依存欠落を防ぐ。
+ */
+export const createNodejsServiceFunctionProps = (
+  props: Omit<lambdaNodejs.NodejsFunctionProps, "bundling" | "depsLockFilePath" | "entry" | "handler"> & {
+    serviceName: string
+  }
+): lambdaNodejs.NodejsFunctionProps => {
+  const repoRootPath = resolveRepoRootPath()
+
+  return {
+    ...props,
+    entry: resolveServiceEntryPath(props.serviceName),
+    handler: "handler",
+    bundling: {
+      format: lambdaNodejs.OutputFormat.CJS,
+      minify: false,
+      sourceMap: false,
+      target: "node20",
+      tsconfig: path.resolve(repoRootPath, "tsconfig.base.json")
+    },
+    depsLockFilePath: path.resolve(repoRootPath, "package-lock.json")
+  }
 }

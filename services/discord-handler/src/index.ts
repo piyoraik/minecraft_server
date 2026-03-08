@@ -1,6 +1,11 @@
 import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda"
 import { SecretsManagerClient } from "@aws-sdk/client-secrets-manager"
-import { createSecretResolver, readRequiredEnv, type CommandPayload } from "../../shared/src"
+import {
+  createSecretResolver,
+  logger,
+  readRequiredEnv,
+  type CommandPayload
+} from "@minecraft/shared"
 
 import { buildPayload } from "./router"
 import { verifyDiscordRequest } from "./verify"
@@ -113,7 +118,7 @@ const createDefaultDeps = (): HandlerDeps => {
 export const createHandler = (deps: HandlerDeps) => {
   return async (event: LambdaEvent): Promise<LambdaResult> => {
     try {
-      console.info("discord-handler request received", {
+      logger.info("discord-handler request received", {
         hasBody: typeof event.body === "string" && event.body.length > 0,
         isBase64Encoded: event.isBase64Encoded === true,
         headerKeys: Object.keys(event.headers ?? {})
@@ -134,7 +139,7 @@ export const createHandler = (deps: HandlerDeps) => {
         deps.getSecretValue(env.DISCORD_PUBLIC_KEY_SECRET_ARN),
         deps.getSecretValue(env.DISCORD_APP_ID_SECRET_ARN)
       ])
-      console.info("discord-handler secrets loaded")
+      logger.info("discord-handler secrets loaded")
 
       const headers = event.headers ?? {}
       const isValidRequest = verifyDiscordRequest({
@@ -143,24 +148,24 @@ export const createHandler = (deps: HandlerDeps) => {
         discordPublicKeyHex: discordPublicKey
       })
       if (!isValidRequest) {
-        console.warn("discord-handler signature validation failed")
+        logger.warn("discord-handler signature validation failed")
         return createErrorResponse(401, "Invalid request signature")
       }
 
       const interaction = parseInteraction(body)
-      console.info("discord-handler interaction parsed", {
+      logger.info("discord-handler interaction parsed", {
         type: interaction.type,
         commandName: interaction.data?.name ?? null
       })
 
       if (interaction.type === 1) {
-        console.info("discord-handler responding to ping")
+        logger.info("discord-handler responding to ping")
         return createDiscordResponse({ type: 1 })
       }
 
       const payload = buildPayload(interaction, applicationId)
       await deps.invokeProcessor(env.PROCESSOR_FUNCTION_NAME, payload)
-      console.info("discord-handler processor invoked", {
+      logger.info("discord-handler processor invoked", {
         commandName: payload.commandName,
         userId: payload.userId
       })
@@ -174,7 +179,7 @@ export const createHandler = (deps: HandlerDeps) => {
         return createErrorResponse(400, error.message)
       }
 
-      console.error("discord-handler failed", { error })
+      logger.error("discord-handler failed", { error })
       return createErrorResponse(500, "Internal server error")
     }
   }

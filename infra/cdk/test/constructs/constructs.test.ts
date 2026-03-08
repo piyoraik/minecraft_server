@@ -4,6 +4,7 @@ import test from "node:test"
 import { Duration, RemovalPolicy, Stack } from "aws-cdk-lib"
 import { Match, Template } from "aws-cdk-lib/assertions"
 import * as logs from "aws-cdk-lib/aws-logs"
+import * as s3 from "aws-cdk-lib/aws-s3"
 
 import { DiscordBotConstruct } from "../../lib/constructs/application/discord-bot-construct"
 import { PlayerEventPipelineConstruct } from "../../lib/constructs/application/player-event-pipeline-construct"
@@ -77,6 +78,7 @@ void test("MinecraftServerConstruct は EC2 と EIP 紐付けと SSM 用 IAM を
   })
 
   new MinecraftServerConstruct(stack, "Server", {
+    backupBucket: new s3.Bucket(stack, "BackupBucket"),
     elasticIp: network.elasticIp,
     gracefulShutdownTimeout: Duration.seconds(60),
     instanceType: "t3.medium",
@@ -104,6 +106,15 @@ void test("MinecraftServerConstruct は EC2 と EIP 紐付けと SSM 用 IAM を
         "Fn::Join": Match.anyValue()
       })
     ])
+  })
+  template.hasResourceProperties("AWS::IAM::Policy", {
+    PolicyDocument: {
+      Statement: Match.arrayWith([
+        Match.objectLike({
+          Action: Match.arrayWith(["s3:GetObject*", "s3:GetBucket*", "s3:List*", "s3:PutObject", "s3:PutObjectLegalHold", "s3:PutObjectRetention", "s3:PutObjectTagging", "s3:PutObjectVersionTagging", "s3:Abort*"])
+        })
+      ])
+    }
   })
   template.resourceCountIs("AWS::EC2::EIPAssociation", 1)
 })

@@ -2,7 +2,7 @@
 
 このリポジトリは、Discord スラッシュコマンドから Minecraft サーバーを管理するためのプロトタイプです。
 
-現時点の PoC 完了範囲と既知の制約は [docs/poc-status.md](/Users/s-tanaka/work/minecraft/docs/poc-status.md) を参照してください。
+現時点の PoC 完了範囲と既知の制約は [docs/poc-status.md](docs/poc-status.md) を参照してください。
 
 ## できること
 
@@ -13,8 +13,9 @@
 - `/mc gamemode survival|creative|adventure|spectator`
 - `/mc playtime player|top`
 - プレイヤー入退室通知
+- `/mc stop` 時に最新ワールドを S3 へ backup
 
-詳細は [docs/commands.md](/Users/s-tanaka/work/minecraft/docs/commands.md) を参照してください。
+詳細は [docs/commands.md](docs/commands.md) を参照してください。
 
 ## セットアップ
 
@@ -22,14 +23,14 @@
 2. `npm install`
 3. `npm run typecheck`
 4. `npm run test`
-5. `cd /Users/s-tanaka/work/minecraft/infra/cdk && cdk deploy --all`
+5. `make cdk-deploy`
 6. Secrets Manager に Discord / RCON の値を投入
 7. 必要なら `/minecraft/player-event-webhook-url` に Discord Webhook URL を投入
 8. `make register-commands` で slash command を登録
 9. Discord Developer Portal に Function URL を `Interactions Endpoint URL` として設定
 10. `make ansible-ssm-op` で Session Manager 経由の Ansible を実行
 
-詳細な手順は [docs/setup.md](/Users/s-tanaka/work/minecraft/docs/setup.md) を参照してください。
+詳細な手順は [docs/setup.md](docs/setup.md) を参照してください。
 
 ## リポジトリ構成
 
@@ -42,8 +43,8 @@
 - Ansible の role 実装本体: `infra/ansible/roles/*/tasks/*.yml`
 - `infra/ansible/site.yml` は既存コマンド互換の wrapper
 
-CDK の詳細なレイアウトは [infra/cdk/README.md](/Users/s-tanaka/work/minecraft/infra/cdk/README.md) を参照してください。
-Ansible の詳細は [infra/ansible/README.md](/Users/s-tanaka/work/minecraft/infra/ansible/README.md) を参照してください。
+CDK の詳細なレイアウトは [infra/cdk/README.md](infra/cdk/README.md) を参照してください。
+Ansible の詳細は [infra/ansible/README.md](infra/ansible/README.md) を参照してください。
 
 ## 実行入口
 
@@ -97,11 +98,13 @@ ANSIBLE_GALAXY_CMD="uv run ansible-galaxy" ANSIBLE_PLAYBOOK_CMD="uv run ansible-
 ```bash
 uv add ansible-core boto3 botocore
 aws login
-AWS_CLI_BIN="/Users/s-tanaka/.local/share/mise/installs/aws/2.34.4/aws-cli.pkg/Payload/aws-cli/aws" \
+AWS_CLI_BIN="/path/to/aws" \
 ANSIBLE_GALAXY_CMD="uv run ansible-galaxy" \
 ANSIBLE_PLAYBOOK_CMD="uv run ansible-playbook" \
 make ansible-ssm-op
 ```
+
+`AWS_CLI_BIN` は必要な場合だけ、自分の環境の `aws` 実体パスに置き換えて指定します。
 
 `make cdk-synth` `make cdk-diff` `make cdk-deploy` `make ansible-ssm` `make ansible-ssm-op` は、`aws login` 済みの CLI セッションを前提にしています。
 

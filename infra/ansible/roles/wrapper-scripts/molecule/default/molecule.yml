@@ -12,13 +12,15 @@ platforms:
     user: root
 provisioner:
   name: ansible
+  env:
+    ANSIBLE_CONFIG: ${MOLECULE_PROJECT_DIRECTORY}/../../ansible.cfg
   config_options:
     defaults:
-      roles_path: ../../../
       remote_tmp: /tmp
   inventory:
     host_vars:
       wrapper-instance:
+        wrapper_scripts_backup_bucket: molecule-backup-bucket
         wrapper_scripts_dir: /usr/local/bin
 verifier:
   name: ansible

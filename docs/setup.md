@@ -1,6 +1,6 @@
 # Setup
 
-PoC として確認済みの範囲、既知の制約、残作業は [poc-status.md](/Users/s-tanaka/work/minecraft/docs/poc-status.md) を参照する。
+PoC として確認済みの範囲、既知の制約、残作業は [poc-status.md](poc-status.md) を参照する。
 
 1. 依存関係をインストールする
 ```bash
@@ -40,7 +40,7 @@ make register-commands
 export AWS_REGION="ap-northeast-1"
 export DISCORD_APPLICATION_ID_SECRET_ID="/minecraft/discord-application-id"
 export DISCORD_BOT_TOKEN_SECRET_ID="/minecraft/discord-token"
-/Users/s-tanaka/work/minecraft/scripts/register-discord-commands.sh
+./scripts/register-discord-commands.sh
 ```
 
 5. Discord Developer Portal の `Interactions Endpoint URL` に Lambda Function URL を設定する
@@ -100,8 +100,10 @@ op run -- make ansible-ssm
 ```bash
 uv add ansible-core boto3 botocore
 aws login
-AWS_CLI_BIN="/Users/s-tanaka/.local/share/mise/installs/aws/2.34.4/aws-cli.pkg/Payload/aws-cli/aws" \
+AWS_CLI_BIN="/path/to/aws" \
 ANSIBLE_GALAXY_CMD="uv run ansible-galaxy" \
 ANSIBLE_PLAYBOOK_CMD="uv run ansible-playbook" \
 make ansible-ssm-op
 ```
+
+`AWS_CLI_BIN` は必要な場合だけ、自分の環境の `aws` 実体パスへ置き換える。

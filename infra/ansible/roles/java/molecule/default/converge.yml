@@ -11,4 +11,4 @@
       ansible.builtin.command: dnf makecache
       changed_when: false
   roles:
-    - role: /Users/s-tanaka/work/minecraft/infra/ansible/roles/java
+    - role: java

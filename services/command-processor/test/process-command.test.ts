@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import type { CommandPayload } from "../../shared/src/types"
+import type { CommandPayload } from "@minecraft/shared"
 
 import { processCommand } from "../src/index"
 
@@ -122,49 +122,42 @@ ignored
 
 test("コマンド失敗時はエラー follow-up を送信する", async () => {
   const sentMessages: string[] = []
-  const originalConsoleError = console.error
-  console.error = () => {}
-
-  try {
-    await assert.rejects(async () => {
-      await processCommand(
-        {
-          ...basePayload,
-          commandName: "start"
+  await assert.rejects(async () => {
+    await processCommand(
+      {
+        ...basePayload,
+        commandName: "start"
+      },
+      {
+        ec2: {
+          findInstanceByProjectTag: async () => ({
+            instanceId: "i-123",
+            state: "terminated",
+            publicIp: null
+          }),
+          describeInstance: async () => ({ instanceId: "i-123", state: "terminated", publicIp: null }),
+          startInstance: async () => Promise.resolve(),
+          stopInstance: async () => Promise.resolve(),
+          waitForState: async () => Promise.resolve()
         },
-        {
-          ec2: {
-            findInstanceByProjectTag: async () => ({
-              instanceId: "i-123",
-              state: "terminated",
-              publicIp: null
-            }),
-            describeInstance: async () => ({ instanceId: "i-123", state: "terminated", publicIp: null }),
-            startInstance: async () => Promise.resolve(),
-            stopInstance: async () => Promise.resolve(),
-            waitForState: async () => Promise.resolve()
-          },
-          ssm: {
-            runCommand: async () => "",
-            waitUntilReady: async () => Promise.resolve()
-          },
-          playerStats: {
-            get: async () => null,
-            listTop: async () => [],
-            closeAllOnline: async () => 0
-          },
-          followup: {
-            send: async (_appId, _token, content) => {
-              sentMessages.push(content)
-            }
+        ssm: {
+          runCommand: async () => "",
+          waitUntilReady: async () => Promise.resolve()
+        },
+        playerStats: {
+          get: async () => null,
+          listTop: async () => [],
+          closeAllOnline: async () => 0
+        },
+        followup: {
+          send: async (_appId, _token, content) => {
+            sentMessages.push(content)
           }
-        },
-        "i-123"
-      )
-    })
-  } finally {
-    console.error = originalConsoleError
-  }
+        }
+      },
+      "i-123"
+    )
+  })
 
   assert.equal(sentMessages.length, 1)
   const firstMessage = sentMessages[0]
@@ -278,6 +271,118 @@ test("cmd コマンドは allowlist 外を拒否する", async () => {
   const firstMessage = sentMessages[0]
   assert.ok(firstMessage)
   assert.equal(firstMessage, "⚠️ 許可されていないコマンドです")
+})
+
+test("restore コマンドは stopped インスタンスを一時起動して restore 後に停止する", async () => {
+  const sentMessages: string[] = []
+  const calls: string[] = []
+
+  await processCommand(
+    {
+      commandName: "restore",
+      applicationId: "app-id",
+      interactionToken: "token-1",
+      userId: "user-1"
+    },
+    {
+      ec2: {
+        findInstanceByProjectTag: async () => ({
+          instanceId: "i-123",
+          state: "stopped",
+          publicIp: null
+        }),
+        describeInstance: async () => ({ instanceId: "i-123", state: "stopped", publicIp: null }),
+        startInstance: async () => {
+          calls.push("start")
+        },
+        stopInstance: async () => {
+          calls.push("stop")
+        },
+        waitForState: async () => {
+          calls.push("wait-running")
+        }
+      },
+      ssm: {
+        runCommand: async (_instanceId, command) => {
+          calls.push(command)
+          assert.match(command, /\/usr\/local\/bin\/mc-restore/)
+          return "backup restored"
+        },
+        waitUntilReady: async () => {
+          calls.push("wait-ssm")
+        }
+      },
+      playerStats: {
+        get: async () => null,
+        listTop: async () => [],
+        closeAllOnline: async () => 0
+      },
+      followup: {
+        send: async (_appId, _token, content) => {
+          sentMessages.push(content)
+        }
+      }
+    },
+    "minecraft-server"
+  )
+
+  assert.deepEqual(calls, ["start", "wait-running", "wait-ssm", "/usr/local/bin/mc-restore", "stop"])
+  assert.equal(sentMessages.length, 1)
+  assert.match(sentMessages[0] ?? "", /latest backup を restore/)
+})
+
+test("restore コマンドは running インスタンスでは拒否する", async () => {
+  const sentMessages: string[] = []
+
+  await processCommand(
+    {
+      commandName: "restore",
+      applicationId: "app-id",
+      interactionToken: "token-1",
+      userId: "user-1"
+    },
+    {
+      ec2: {
+        findInstanceByProjectTag: async () => ({
+          instanceId: "i-123",
+          state: "running",
+          publicIp: null
+        }),
+        describeInstance: async () => ({ instanceId: "i-123", state: "running", publicIp: null }),
+        startInstance: async () => {
+          throw new Error("should not start")
+        },
+        stopInstance: async () => {
+          throw new Error("should not stop")
+        },
+        waitForState: async () => {
+          throw new Error("should not wait")
+        }
+      },
+      ssm: {
+        runCommand: async () => {
+          throw new Error("should not run")
+        },
+        waitUntilReady: async () => {
+          throw new Error("should not wait")
+        }
+      },
+      playerStats: {
+        get: async () => null,
+        listTop: async () => [],
+        closeAllOnline: async () => 0
+      },
+      followup: {
+        send: async (_appId, _token, content) => {
+          sentMessages.push(content)
+        }
+      }
+    },
+    "minecraft-server"
+  )
+
+  assert.equal(sentMessages.length, 1)
+  assert.match(sentMessages[0] ?? "", /restore できません/)
 })
 
 test("stop コマンド時にオンラインセッションをクローズする", async () => {

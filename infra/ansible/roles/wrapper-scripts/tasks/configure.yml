@@ -1,4 +1,19 @@
 ---
+- name: backup bucket が実行時に渡されていることを確認する
+  ansible.builtin.assert:
+    that:
+      - wrapper_scripts_backup_bucket is string
+      - wrapper_scripts_backup_bucket | length > 0
+    fail_msg: "wrapper_scripts_backup_bucket が未設定です。MINECRAFT_SSM_BUCKET を環境変数として渡してください。"
+
+- name: Minecraft backup 設定ファイルを配置する
+  ansible.builtin.template:
+    src: minecraft-backup.env.j2
+    dest: "{{ wrapper_scripts_backup_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Minecraft 運用用 wrapper script を配置する
   ansible.builtin.copy:
     src: "{{ item }}"
@@ -7,6 +22,8 @@
     group: root
     mode: "0755"
   loop:
+    - mc-backup
+    - mc-restore
     - mc-start
     - mc-stop
     - mc-status

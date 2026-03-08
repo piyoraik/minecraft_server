@@ -3,14 +3,26 @@
   ansible.builtin.uri:
     url: https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
     return_content: true
+  check_mode: false
+  changed_when: false
   register: minecraft_version_manifest
+
+- name: Minecraft バージョンマニフェストを正規化する
+  ansible.builtin.set_fact:
+    minecraft_version_manifest_data: >-
+      {{
+        minecraft_version_manifest.get(
+          'json',
+          minecraft_version_manifest.get('content', '{}') | from_json
+        )
+      }}
 
 - name: 対象バージョンのメタデータ URL を解決する
   ansible.builtin.set_fact:
     minecraft_version_metadata_url: >-
       {{
         (
-          minecraft_version_manifest.json.versions
+          minecraft_version_manifest_data.versions
           | selectattr('id', 'equalto', minecraft_version)
           | map(attribute='url')
           | first
@@ -28,12 +40,26 @@
   ansible.builtin.uri:
     url: "{{ minecraft_version_metadata_url }}"
     return_content: true
+  check_mode: false
+  changed_when: false
   register: minecraft_version_metadata
 
 - name: Minecraft サーバー JAR を配置する
   ansible.builtin.get_url:
-    url: "{{ minecraft_version_metadata.json.downloads.server.url }}"
-    checksum: "sha1:{{ minecraft_version_metadata.json.downloads.server.sha1 }}"
+    url: >-
+      {{
+        minecraft_version_metadata.get(
+          'json',
+          minecraft_version_metadata.get('content', '{}') | from_json
+        ).downloads.server.url
+      }}
+    checksum: >-
+      sha1:{{
+        minecraft_version_metadata.get(
+          'json',
+          minecraft_version_metadata.get('content', '{}') | from_json
+        ).downloads.server.sha1
+      }}
     dest: "{{ minecraft_server_dir }}/minecraft_server.jar"
     owner: "{{ minecraft_user }}"
     group: "{{ minecraft_user }}"

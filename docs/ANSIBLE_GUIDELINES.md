@@ -13,6 +13,8 @@
 - インフラ変更の安全性を高める
 - AI による Playbook 生成の品質を安定させる
 
+> **関連規約**: Ansible は独立したコードベースですが、YAML や Jinja2 テンプレートの記述方針は本規約に従う。インフラ構成に CDK を使用する場合は `CDK_GUIDELINES.md` も参照すること。
+
 ---
 
 ## 2. 基本方針
@@ -33,7 +35,7 @@
 
 ```text
 ansible/
-  ansible.cfg
+  infra/ansible/ansible.cfg
   inventory/
     production/
       hosts.yml
@@ -121,6 +123,42 @@ Playbook にロジックを書かない。詳細な実装は Role に閉じ込�
       tags: [common]
     - role: nginx
       tags: [nginx]
+```
+
+---
+
+## 5.5 become（権限昇格）
+
+`become: true` は必要な場合のみ使用し、スコープを最小限にする。
+
+| スコープ | 推奨度 | 用途 |
+|----------|--------|------|
+| タスクレベル | 推奨 | 特定タスクだけ root が必要な場合 |
+| Play レベル | 条件付き | 大半のタスクが root を必要とする場合 |
+| Role レベル | 非推奨 | Role 全体に一括適用は避ける |
+
+```yaml
+# OK: タスクレベルで必要な箇所のみ become を付ける
+- name: nginx の設定ファイルを配置する
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+  become: true
+
+# Play レベルで become が必要な場合はコメントで理由を記載する
+- name: Web サーバーの構成
+  hosts: web
+  # このプレイの大半のタスクは root 権限を必要とするため Play レベルで become を設定する
+  become: true
+```
+
+`become_user` は特定のサービスユーザーで実行が必要な場合に使用する。
+
+```yaml
+- name: アプリケーションの初期設定を実行する
+  ansible.builtin.command: /opt/app/bin/setup
+  become: true
+  become_user: appuser   # root ではなく専用ユーザーで実行する
 ```
 
 ---
@@ -266,6 +304,34 @@ Handler は Play の末尾にまとめて実行される。途中で即座に実
 
 ---
 
+## 8.5 include_tasks vs import_tasks
+
+Role 内でタスクファイルを分割する場合、`include_tasks` と `import_tasks` を使い分ける。
+
+| 機能 | `import_tasks`（静的） | `include_tasks`（動的） |
+|------|----------------------|------------------------|
+| 処理タイミング | パース時（実行前） | ランタイム（実行中） |
+| タグの伝搬 | 伝搬する | 伝搬しない |
+| `when` の扱い | 各タスクに個別適用 | include 全体に適用 |
+| 変数による動的な指定 | 不可 | 可能 |
+
+基本方針:
+
+- タスクファイルを静的に分割する場合（タグを使いたい・条件を各タスクに適用したい）: `import_tasks` を使用する
+- 変数でファイル名を動的に切り替える場合・条件によってファイルごとスキップしたい場合: `include_tasks` を使用する
+
+```yaml
+# import_tasks: タグが個々のタスクに伝搬する（推奨：静的な分割）
+- name: インストール処理をインポートする
+  ansible.builtin.import_tasks: install.yml
+
+# include_tasks: 変数で動的に切り替える場合
+- name: OS に応じたインストール処理を実行する
+  ansible.builtin.include_tasks: "install_{{ ansible_os_family | lower }}.yml"
+```
+
+---
+
 ## 9. エラーハンドリング
 
 ### block / rescue / always
@@ -350,15 +416,17 @@ nginx_worker_processes: 4
 Ansible の変数優先順位（高い順）は以下のとおり。
 上位のものが下位を上書きする。
 
-1. `extra_vars`（`-e` オプション）
-2. `host_vars/` のファイル
-3. `group_vars/` のファイル（子グループが親グループより優先）
-4. `group_vars/all`
-5. Playbook 内の `vars`
-6. Role の `vars/main.yml`
-7. Role の `defaults/main.yml`（最低優先度）
+1. `extra_vars`（`-e` オプション）（最高優先度）
+2. Role の `vars/main.yml`（上書き不可の強制値として機能する）
+3. Playbook 内の `vars`
+4. `host_vars/` のファイル
+5. `group_vars/` のファイル（子グループが親グループより優先）
+6. `group_vars/all`
+7. Role の `defaults/main.yml`（最低優先度・外部から上書き可能）
 
 この順序を理解した上で変数の定義場所を決める。
+
+> **注意**: `vars/main.yml` は `host_vars` や `group_vars` よりも高い優先度を持つため、上書きを意図しない強制値にのみ使用する。外部から変更を想定する値はすべて `defaults/main.yml` に定義する。
 
 ---
 
@@ -371,6 +439,44 @@ Ansible の変数優先順位（高い順）は以下のとおり。
 | 環境・グループ単位の設定 | `inventory/{env}/group_vars/{group}.yml` |
 | ホスト固有の設定 | `inventory/{env}/host_vars/{host}.yml` |
 | 実行時の一時的な上書き | `-e` オプション |
+
+---
+
+## 10.5 ループ
+
+ループには `loop:` を使用する。旧来の `with_items:` / `with_dict:` は非推奨のため使用しない。
+
+```yaml
+# NG: 非推奨の with_items
+- name: パッケージをインストールする
+  ansible.builtin.apt:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - nginx
+    - git
+    - curl
+
+# OK: loop を使用する
+- name: Web サーバー用パッケージをインストールする
+  ansible.builtin.apt:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nginx
+    - git
+    - curl
+```
+
+辞書型のループには `loop` + `dict2items` フィルタを使用する。
+
+```yaml
+- name: 設定ファイルを配置する
+  ansible.builtin.template:
+    src: "{{ item.value.src }}"
+    dest: "{{ item.value.dest }}"
+  loop: "{{ config_files | dict2items }}"
+```
 
 ---
 
@@ -494,7 +600,7 @@ Vault 暗号化ファイルの命名は `vault_{変数名}.yml` を推奨する�
 
 ## 15. ansible.cfg
 
-プロジェクトルートに `ansible.cfg` を配置し、標準設定を共有する。
+`infra/ansible/ansible.cfg` に Ansible 共通設定を配置し、playbook / Molecule / 補助 script から同じ設定を参照する。
 
 ```ini
 [defaults]
@@ -514,6 +620,38 @@ pipelining = true
 ```
 
 `host_key_checking = false` は開発・検証環境のみ許容する。本番環境では `true` を推奨する。
+
+---
+
+### Molecule からの ansible.cfg 参照
+
+Molecule はロールのディレクトリをプロジェクトルートとして実行するため、上位ディレクトリの `ansible.cfg` を自動で見つけられない。
+`molecule.yml` の `env` に `ANSIBLE_CONFIG` を明示することで、プロジェクト共通の設定を参照させる。
+
+ディレクトリ構成と変数の関係:
+
+```text
+ansible/
+  ansible.cfg                          ← 参照先
+  roles/
+    nginx/                             ← MOLECULE_PROJECT_DIRECTORY
+      molecule/
+        default/
+          molecule.yml
+```
+
+`MOLECULE_PROJECT_DIRECTORY` はロールのルートディレクトリを指すため、`../../` でプロジェクトルートの `ansible.cfg` に到達できる。
+
+```yaml
+# molecule.yml
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_CONFIG: ${MOLECULE_PROJECT_DIRECTORY}/../../ansible.cfg
+```
+
+この記述は意図的なものであり、パス解決の構造を理解した上で変更しないこと。
+`ansible.cfg` の配置場所を変更した場合は、合わせてこのパスも更新する。
 
 ---
 
@@ -600,6 +738,7 @@ Claude / Codex 等の AI は以下を遵守する。
 - ハンドラーが必要な変更には `notify` を使用する
 - 機密情報を含むタスクには `no_log: true` を付ける
 - 新規 Role にはテスト（Molecule）を追加する
+- 生成した Playbook / Role に対してレビュー観点（冪等性・セキュリティ・become スコープ・no_log 漏れ等）を自己申告する
 
 ---
 

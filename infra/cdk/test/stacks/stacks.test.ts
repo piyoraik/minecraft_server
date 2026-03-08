@@ -82,7 +82,9 @@ void test("ComputeStack は deleteOnTermination=false の EBS を持つ", () => 
   const app = new App()
   const config = loadAppConfig()
   const network = new NetworkStack(app, "NetworkForComputeTest", { config })
+  const lambda = new LambdaStack(app, "LambdaForComputeTest", { config })
   const compute = new ComputeStack(app, "ComputeTest", {
+    backupBucket: lambda.ansibleSsmBucket,
     config,
     vpc: network.vpc,
     securityGroup: network.securityGroup,
@@ -107,7 +109,9 @@ void test("ComputeStack は SSM と CloudWatch Logs に必要な最小権限を�
   const app = new App()
   const config = loadAppConfig()
   const network = new NetworkStack(app, "NetworkForComputeIamTest", { config })
+  const lambda = new LambdaStack(app, "LambdaForComputeIamTest", { config })
   const compute = new ComputeStack(app, "ComputeIamTest", {
+    backupBucket: lambda.ansibleSsmBucket,
     config,
     vpc: network.vpc,
     securityGroup: network.securityGroup,
@@ -133,6 +137,20 @@ void test("ComputeStack は SSM と CloudWatch Logs に必要な最小権限を�
             "logs:PutLogEvents"
           ]),
           Effect: "Allow"
+        }),
+        Match.objectLike({
+          Action: Match.arrayWith([
+            "s3:GetObject*",
+            "s3:GetBucket*",
+            "s3:List*",
+            "s3:PutObject",
+            "s3:PutObjectLegalHold",
+            "s3:PutObjectRetention",
+            "s3:PutObjectTagging",
+            "s3:PutObjectVersionTagging",
+            "s3:Abort*"
+          ]),
+          Effect: "Allow"
         })
       ]),
       Version: "2012-10-17"
@@ -144,7 +162,9 @@ void test("ComputeStack は必要な Output を公開する", () => {
   const app = new App()
   const config = loadAppConfig()
   const network = new NetworkStack(app, "NetworkForComputeOutputTest", { config })
+  const lambda = new LambdaStack(app, "LambdaForComputeOutputTest", { config })
   const compute = new ComputeStack(app, "ComputeOutputTest", {
+    backupBucket: lambda.ansibleSsmBucket,
     config,
     vpc: network.vpc,
     securityGroup: network.securityGroup,

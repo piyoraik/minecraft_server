@@ -7,7 +7,7 @@ import {
   type AttributeValue
 } from "@aws-sdk/client-dynamodb"
 import { SecretsManagerClient } from "@aws-sdk/client-secrets-manager"
-import { createSecretResolver } from "../../shared/src"
+import { createSecretResolver, readRequiredEnv } from "@minecraft/shared"
 
 type CloudWatchLogsEvent = {
   awslogs: {
@@ -327,16 +327,19 @@ export const createHandler = (deps: HandlerDeps) => {
   }
 }
 
-export const handler = createHandler({
-  store: createPlayerStatsStore(
-    process.env.PLAYER_STATS_TABLE_NAME ?? (() => {
-      throw new Error("Missing required environment variable: PLAYER_STATS_TABLE_NAME")
-    })()
-  ),
-  getWebhookUrl: createWebhookResolver(
-    process.env.PLAYER_EVENT_WEBHOOK_SECRET_ARN ?? (() => {
-      throw new Error("Missing required environment variable: PLAYER_EVENT_WEBHOOK_SECRET_ARN")
-    })()
-  ),
-  notify: sendWebhookNotification
-})
+const createDefaultHandler = () => {
+  const env = readRequiredEnv([
+    "PLAYER_STATS_TABLE_NAME",
+    "PLAYER_EVENT_WEBHOOK_SECRET_ARN"
+  ] as const)
+
+  return createHandler({
+    store: createPlayerStatsStore(env.PLAYER_STATS_TABLE_NAME),
+    getWebhookUrl: createWebhookResolver(env.PLAYER_EVENT_WEBHOOK_SECRET_ARN),
+    notify: sendWebhookNotification
+  })
+}
+
+export const handler = async (event: CloudWatchLogsEvent): Promise<void> => {
+  await createDefaultHandler()(event)
+}

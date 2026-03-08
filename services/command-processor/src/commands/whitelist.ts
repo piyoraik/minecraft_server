@@ -1,4 +1,4 @@
-import type { CommandPayload } from "../../../shared/src/types"
+import type { CommandPayload } from "@minecraft/shared"
 import type { Ec2Gateway } from "../aws/ec2"
 import { createSsmCommand, type SsmGateway } from "../aws/ssm"
 

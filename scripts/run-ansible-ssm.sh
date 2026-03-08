@@ -6,9 +6,11 @@ readonly AWS_CLI_BIN="${AWS_CLI_BIN:-aws}"
 readonly COMPUTE_STACK_NAME="${COMPUTE_STACK_NAME:-Compute}"
 readonly LAMBDA_STACK_NAME="${LAMBDA_STACK_NAME:-Lambda}"
 readonly RCON_SECRET_ID="${RCON_SECRET_ID:-/minecraft/rcon-password}"
-readonly WORKDIR="/Users/s-tanaka/work/minecraft"
 readonly ANSIBLE_GALAXY_CMD="${ANSIBLE_GALAXY_CMD:-ansible-galaxy}"
 readonly ANSIBLE_PLAYBOOK_CMD="${ANSIBLE_PLAYBOOK_CMD:-ansible-playbook}"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly WORKDIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+readonly ANSIBLE_CONFIG_FILE="${WORKDIR}/infra/ansible/ansible.cfg"
 
 get_stack_output() {
   local stack_name="$1"
@@ -90,6 +92,7 @@ export MINECRAFT_INSTANCE_ID
 export MINECRAFT_SSM_BUCKET
 export MINECRAFT_RCON_PASSWORD
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY="${OBJC_DISABLE_INITIALIZE_FORK_SAFETY:-YES}"
+export ANSIBLE_CONFIG="${ANSIBLE_CONFIG:-${ANSIBLE_CONFIG_FILE}}"
 
 cd "${WORKDIR}"
 require_command session-manager-plugin

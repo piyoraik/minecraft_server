@@ -1,2 +1,6 @@
 ---
 wrapper_scripts_dir: /usr/local/bin
+wrapper_scripts_backup_bucket: "{{ lookup('env', 'MINECRAFT_SSM_BUCKET') | default('', true) }}"
+wrapper_scripts_backup_config_path: /etc/minecraft-backup.env
+wrapper_scripts_backup_prefix: world-backups
+wrapper_scripts_minecraft_server_dir: /home/minecraft/linuxgsm/serverfiles

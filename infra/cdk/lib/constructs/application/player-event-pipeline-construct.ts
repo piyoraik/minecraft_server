@@ -2,13 +2,14 @@ import { Duration } from "aws-cdk-lib"
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb"
 import * as iam from "aws-cdk-lib/aws-iam"
 import * as lambda from "aws-cdk-lib/aws-lambda"
+import * as lambdaNodejs from "aws-cdk-lib/aws-lambda-nodejs"
 import * as logs from "aws-cdk-lib/aws-logs"
 import * as logsDestinations from "aws-cdk-lib/aws-logs-destinations"
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager"
 import { Construct } from "constructs"
 
 import {
-  createLambdaCode,
+  createNodejsServiceFunctionProps,
   createLogPolicyResources,
   getCfnFunction,
   getCfnLogGroup
@@ -47,22 +48,22 @@ export class PlayerEventPipelineConstruct extends Construct {
     props.playerStatsTable.grantReadWriteData(playerEventProcessorRole)
     props.playerEventWebhookUrl.grantRead(playerEventProcessorRole)
 
-    this.playerEventProcessorFunction = new lambda.Function(this, "PlayerEventProcessorFunction", {
-      functionName: "minecraft-player-event-processor",
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: "src/index.handler",
-      code: createLambdaCode(
-        "player-event-processor",
-        "exports.handler=async ()=>{console.log('player-event-processor fallback');};"
-      ),
-      role: playerEventProcessorRole,
-      timeout: Duration.seconds(30),
-      memorySize: 256,
-      environment: {
-        PLAYER_STATS_TABLE_NAME: props.playerStatsTable.tableName,
-        PLAYER_EVENT_WEBHOOK_SECRET_ARN: props.playerEventWebhookUrl.secretArn
-      }
-    })
+    this.playerEventProcessorFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      "PlayerEventProcessorFunction",
+      createNodejsServiceFunctionProps({
+        serviceName: "player-event-processor",
+        functionName: "minecraft-player-event-processor",
+        runtime: lambda.Runtime.NODEJS_20_X,
+        role: playerEventProcessorRole,
+        timeout: Duration.seconds(30),
+        memorySize: 256,
+        environment: {
+          PLAYER_STATS_TABLE_NAME: props.playerStatsTable.tableName,
+          PLAYER_EVENT_WEBHOOK_SECRET_ARN: props.playerEventWebhookUrl.secretArn
+        }
+      })
+    )
 
     const playerEventProcessorCfnFunction = getCfnFunction(this.playerEventProcessorFunction)
     playerEventProcessorCfnFunction.loggingConfig = {

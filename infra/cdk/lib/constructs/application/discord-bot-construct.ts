@@ -2,12 +2,13 @@ import { Duration } from "aws-cdk-lib"
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb"
 import * as iam from "aws-cdk-lib/aws-iam"
 import * as lambda from "aws-cdk-lib/aws-lambda"
+import * as lambdaNodejs from "aws-cdk-lib/aws-lambda-nodejs"
 import * as logs from "aws-cdk-lib/aws-logs"
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager"
 import { Construct } from "constructs"
 
 import {
-  createLambdaCode,
+  createNodejsServiceFunctionProps,
   createLogPolicyResources,
   getCfnFunction,
   getCfnLogGroup
@@ -70,22 +71,22 @@ export class DiscordBotConstruct extends Construct {
     )
     props.playerStatsTable.grantReadData(commandProcessorRole)
 
-    this.commandProcessorFunction = new lambda.Function(this, "CommandProcessorFunction", {
-      functionName: "minecraft-command-processor",
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: "command-processor/src/index.handler",
-      code: createLambdaCode(
-        "command-processor",
-        "exports.handler=async ()=>{console.log('command-processor fallback');};"
-      ),
+    this.commandProcessorFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      "CommandProcessorFunction",
+      createNodejsServiceFunctionProps({
+        serviceName: "command-processor",
+        functionName: "minecraft-command-processor",
+        runtime: lambda.Runtime.NODEJS_20_X,
       role: commandProcessorRole,
       timeout: Duration.seconds(300),
       memorySize: 256,
-      environment: {
-        EC2_PROJECT_TAG_VALUE: props.projectTagValue,
-        PLAYER_STATS_TABLE_NAME: props.playerStatsTable.tableName
-      }
-    })
+        environment: {
+          EC2_PROJECT_TAG_VALUE: props.projectTagValue,
+          PLAYER_STATS_TABLE_NAME: props.playerStatsTable.tableName
+        }
+      })
+    )
 
     const commandProcessorCfnFunction = getCfnFunction(this.commandProcessorFunction)
     commandProcessorCfnFunction.loggingConfig = {
@@ -121,23 +122,23 @@ export class DiscordBotConstruct extends Construct {
     props.discordPublicKey.grantRead(discordHandlerRole)
     props.discordApplicationId.grantRead(discordHandlerRole)
 
-    this.discordHandlerFunction = new lambda.Function(this, "DiscordHandlerFunction", {
-      functionName: "minecraft-discord-handler",
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: "discord-handler/src/index.handler",
-      code: createLambdaCode(
-        "discord-handler",
-        "exports.handler=async ()=>({statusCode:200,headers:{'content-type':'application/json'},body:JSON.stringify({type:1})});"
-      ),
+    this.discordHandlerFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      "DiscordHandlerFunction",
+      createNodejsServiceFunctionProps({
+        serviceName: "discord-handler",
+        functionName: "minecraft-discord-handler",
+        runtime: lambda.Runtime.NODEJS_20_X,
       role: discordHandlerRole,
       timeout: Duration.seconds(10),
       memorySize: 256,
-      environment: {
-        DISCORD_PUBLIC_KEY_SECRET_ARN: props.discordPublicKey.secretArn,
-        DISCORD_APP_ID_SECRET_ARN: props.discordApplicationId.secretArn,
-        PROCESSOR_FUNCTION_NAME: this.commandProcessorFunction.functionName
-      }
-    })
+        environment: {
+          DISCORD_PUBLIC_KEY_SECRET_ARN: props.discordPublicKey.secretArn,
+          DISCORD_APP_ID_SECRET_ARN: props.discordApplicationId.secretArn,
+          PROCESSOR_FUNCTION_NAME: this.commandProcessorFunction.functionName
+        }
+      })
+    )
 
     const discordHandlerCfnFunction = getCfnFunction(this.discordHandlerFunction)
     discordHandlerCfnFunction.loggingConfig = {

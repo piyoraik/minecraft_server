@@ -5,7 +5,7 @@ import type {
   GameMode,
   PlaytimeAction,
   WhitelistAction
-} from "../../shared/src/types"
+} from "@minecraft/shared"
 
 type DiscordOption = {
   name?: string
@@ -37,6 +37,7 @@ const SUPPORTED_COMMANDS: readonly CommandName[] = [
   "start",
   "stop",
   "status",
+  "restore",
   "cmd",
   "whitelist",
   "admin",

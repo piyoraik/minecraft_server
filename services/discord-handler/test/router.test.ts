@@ -39,6 +39,31 @@ test("buildPayload は必要項目をまとめる", () => {
   })
 })
 
+test("buildPayload は restore をまとめる", () => {
+  const payload = buildPayload(
+    {
+      token: "token-1",
+      data: {
+        name: "mc",
+        options: [{ name: "restore" }]
+      },
+      member: {
+        user: {
+          id: "user-1"
+        }
+      }
+    },
+    "app-1"
+  )
+
+  assert.deepEqual(payload, {
+    commandName: "restore",
+    applicationId: "app-1",
+    interactionToken: "token-1",
+    userId: "user-1"
+  })
+})
+
 test("buildPayload は cmd 引数をまとめる", () => {
   const payload = buildPayload(
     {

@@ -1,3 +1,9 @@
+ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+VENV_BIN := $(ROOT_DIR).venv/bin
+CDK_DIR := $(ROOT_DIR)infra/cdk
+ANSIBLE_ROLES_DIR := $(ROOT_DIR)infra/ansible/roles
+ANSIBLE_CONFIG_FILE := $(ROOT_DIR)infra/ansible/ansible.cfg
+
 AWS_REGION ?= ap-northeast-1
 AWS_ACCOUNT_ID ?=
 AWS_CLI_BIN ?= aws
@@ -8,13 +14,13 @@ DISCORD_APPLICATION_ID_SECRET_ID ?= /minecraft/discord-application-id
 DISCORD_BOT_TOKEN_SECRET_ID ?= /minecraft/discord-token
 CDK_STACKS ?= Network Compute Lambda
 CDK_CLI ?= npx aws-cdk
-ifneq ("$(wildcard /Users/s-tanaka/work/minecraft/.venv/bin/ansible-galaxy)","")
-ANSIBLE_GALAXY_CMD ?= /Users/s-tanaka/work/minecraft/.venv/bin/ansible-galaxy
+ifneq ("$(wildcard $(VENV_BIN)/ansible-galaxy)","")
+ANSIBLE_GALAXY_CMD ?= $(VENV_BIN)/ansible-galaxy
 else
 ANSIBLE_GALAXY_CMD ?= ansible-galaxy
 endif
-ifneq ("$(wildcard /Users/s-tanaka/work/minecraft/.venv/bin/ansible-playbook)","")
-ANSIBLE_PLAYBOOK_CMD ?= /Users/s-tanaka/work/minecraft/.venv/bin/ansible-playbook
+ifneq ("$(wildcard $(VENV_BIN)/ansible-playbook)","")
+ANSIBLE_PLAYBOOK_CMD ?= $(VENV_BIN)/ansible-playbook
 else
 ANSIBLE_PLAYBOOK_CMD ?= ansible-playbook
 endif
@@ -87,7 +93,7 @@ cdk-synth:
 		echo "CDK 用の AWS account を解決できません。AWS_ACCOUNT_ID か CDK_DEFAULT_ACCOUNT を指定するか、aws login を実行してください。" >&2; \
 		exit 1; \
 	fi; \
-	cd /Users/s-tanaka/work/minecraft/infra/cdk && CDK_DEFAULT_ACCOUNT="$$ACCOUNT_ID" CDK_DEFAULT_REGION="$(AWS_REGION)" AWS_REGION="$(AWS_REGION)" $(CDK_CLI) synth $(CDK_STACKS)
+	cd "$(CDK_DIR)" && CDK_DEFAULT_ACCOUNT="$$ACCOUNT_ID" CDK_DEFAULT_REGION="$(AWS_REGION)" AWS_REGION="$(AWS_REGION)" $(CDK_CLI) synth $(CDK_STACKS)
 
 cdk-diff:
 	@ACCOUNT_ID="$${CDK_DEFAULT_ACCOUNT:-$(AWS_ACCOUNT_ID)}"; \
@@ -98,7 +104,7 @@ cdk-diff:
 		echo "CDK 用の AWS account を解決できません。AWS_ACCOUNT_ID か CDK_DEFAULT_ACCOUNT を指定するか、aws login を実行してください。" >&2; \
 		exit 1; \
 	fi; \
-	cd /Users/s-tanaka/work/minecraft/infra/cdk && CDK_DEFAULT_ACCOUNT="$$ACCOUNT_ID" CDK_DEFAULT_REGION="$(AWS_REGION)" AWS_REGION="$(AWS_REGION)" $(CDK_CLI) diff $(CDK_STACKS)
+	cd "$(CDK_DIR)" && CDK_DEFAULT_ACCOUNT="$$ACCOUNT_ID" CDK_DEFAULT_REGION="$(AWS_REGION)" AWS_REGION="$(AWS_REGION)" $(CDK_CLI) diff $(CDK_STACKS)
 
 cdk-deploy:
 	@ACCOUNT_ID="$${CDK_DEFAULT_ACCOUNT:-$(AWS_ACCOUNT_ID)}"; \
@@ -109,14 +115,14 @@ cdk-deploy:
 		echo "CDK 用の AWS account を解決できません。AWS_ACCOUNT_ID か CDK_DEFAULT_ACCOUNT を指定するか、aws login を実行してください。" >&2; \
 		exit 1; \
 	fi; \
-	cd /Users/s-tanaka/work/minecraft/infra/cdk && CDK_DEFAULT_ACCOUNT="$$ACCOUNT_ID" CDK_DEFAULT_REGION="$(AWS_REGION)" AWS_REGION="$(AWS_REGION)" $(CDK_CLI) deploy $(CDK_STACKS)
+	cd "$(CDK_DIR)" && CDK_DEFAULT_ACCOUNT="$$ACCOUNT_ID" CDK_DEFAULT_REGION="$(AWS_REGION)" AWS_REGION="$(AWS_REGION)" $(CDK_CLI) deploy $(CDK_STACKS)
 
 register-commands:
 	@AWS_REGION="$(AWS_REGION)" \
 	AWS_CLI_BIN="$(AWS_CLI_BIN)" \
 	DISCORD_APPLICATION_ID_SECRET_ID="$(DISCORD_APPLICATION_ID_SECRET_ID)" \
 	DISCORD_BOT_TOKEN_SECRET_ID="$(DISCORD_BOT_TOKEN_SECRET_ID)" \
-	/Users/s-tanaka/work/minecraft/scripts/register-discord-commands.sh
+	"$(ROOT_DIR)scripts/register-discord-commands.sh"
 
 ansible-ssm:
 	@AWS_REGION="$(AWS_REGION)" \
@@ -126,7 +132,7 @@ ansible-ssm:
 	RCON_SECRET_ID="$(RCON_SECRET_ID)" \
 	ANSIBLE_GALAXY_CMD="$(ANSIBLE_GALAXY_CMD)" \
 	ANSIBLE_PLAYBOOK_CMD="$(ANSIBLE_PLAYBOOK_CMD)" \
-	/Users/s-tanaka/work/minecraft/scripts/run-ansible-ssm.sh
+	"$(ROOT_DIR)scripts/run-ansible-ssm.sh"
 
 ansible-ssm-check:
 	@AWS_REGION="$(AWS_REGION)" \
@@ -136,7 +142,7 @@ ansible-ssm-check:
 	RCON_SECRET_ID="$(RCON_SECRET_ID)" \
 	ANSIBLE_GALAXY_CMD="$(ANSIBLE_GALAXY_CMD)" \
 	ANSIBLE_PLAYBOOK_CMD="$(ANSIBLE_PLAYBOOK_CMD)" \
-	/Users/s-tanaka/work/minecraft/scripts/run-ansible-ssm.sh --check
+	"$(ROOT_DIR)scripts/run-ansible-ssm.sh" --check
 
 ansible-ssm-op:
 	@AWS_REGION="$(AWS_REGION)" \
@@ -146,7 +152,7 @@ ansible-ssm-op:
 	RCON_SECRET_ID="$(RCON_SECRET_ID)" \
 	ANSIBLE_GALAXY_CMD="$(ANSIBLE_GALAXY_CMD)" \
 	ANSIBLE_PLAYBOOK_CMD="$(ANSIBLE_PLAYBOOK_CMD)" \
-	/Users/s-tanaka/work/minecraft/scripts/run-ansible-ssm-op.sh
+	"$(ROOT_DIR)scripts/run-ansible-ssm-op.sh"
 
 ansible-ssm-op-check:
 	@AWS_REGION="$(AWS_REGION)" \
@@ -156,7 +162,7 @@ ansible-ssm-op-check:
 	RCON_SECRET_ID="$(RCON_SECRET_ID)" \
 	ANSIBLE_GALAXY_CMD="$(ANSIBLE_GALAXY_CMD)" \
 	ANSIBLE_PLAYBOOK_CMD="$(ANSIBLE_PLAYBOOK_CMD)" \
-	/Users/s-tanaka/work/minecraft/scripts/run-ansible-ssm-op.sh --check
+	"$(ROOT_DIR)scripts/run-ansible-ssm-op.sh" --check
 
 ssm-session:
 	@INSTANCE_ID="$${SESSION_INSTANCE_ID:-$$("$(AWS_CLI_BIN)" cloudformation describe-stacks \
@@ -170,16 +176,17 @@ yaml-lint:
 	@uv run yamllint .
 
 ansible-lint:
-	@uv run ansible-lint infra/ansible
+	@ANSIBLE_CONFIG="$(ANSIBLE_CONFIG_FILE)" uv run ansible-lint infra/ansible
 
 ansible-syntax-check:
 	@AWS_REGION="$(AWS_REGION)" \
 	MINECRAFT_INSTANCE_ID="$${MINECRAFT_INSTANCE_ID:-dummy}" \
 	MINECRAFT_SSM_BUCKET="$${MINECRAFT_SSM_BUCKET:-dummy}" \
 	MINECRAFT_RCON_PASSWORD="$${MINECRAFT_RCON_PASSWORD:-dummy}" \
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG_FILE)" \
 	uv run ansible-playbook -i infra/ansible/inventory/production/hosts.yml infra/ansible/site.yml --syntax-check
 
 molecule-test:
-	@cd /Users/s-tanaka/work/minecraft/infra/ansible/roles/common && uv run molecule test
-	@cd /Users/s-tanaka/work/minecraft/infra/ansible/roles/java && uv run molecule test
-	@cd /Users/s-tanaka/work/minecraft/infra/ansible/roles/wrapper-scripts && uv run molecule test
+	@cd "$(ANSIBLE_ROLES_DIR)/common" && uv run molecule test
+	@cd "$(ANSIBLE_ROLES_DIR)/java" && uv run molecule test
+	@cd "$(ANSIBLE_ROLES_DIR)/wrapper-scripts" && uv run molecule test

@@ -1,5 +1,6 @@
 import { CfnOutput, Duration, Stack, type StackProps } from "aws-cdk-lib"
 import * as ec2 from "aws-cdk-lib/aws-ec2"
+import type * as s3 from "aws-cdk-lib/aws-s3"
 import type { Construct } from "constructs"
 
 import type { AppConfig } from "../config/types"
@@ -7,6 +8,7 @@ import { MinecraftServerConstruct } from "../constructs/compute/minecraft-server
 import { applyStandardTags } from "../helpers/tags"
 
 export type ComputeStackProps = StackProps & {
+  backupBucket: s3.IBucket
   config: AppConfig
   elasticIp: ec2.CfnEIP
   securityGroup: ec2.ISecurityGroup
@@ -27,6 +29,7 @@ export class ComputeStack extends Stack {
     applyStandardTags(this, props.config)
 
     const server = new MinecraftServerConstruct(this, "MinecraftServer", {
+      backupBucket: props.backupBucket,
       elasticIp: props.elasticIp,
       gracefulShutdownTimeout: Duration.seconds(props.config.compute.gracefulShutdownTimeoutSeconds),
       instanceType: props.config.compute.instanceType,

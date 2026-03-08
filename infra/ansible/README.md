@@ -16,6 +16,7 @@ Minecraft サーバーの初期構築と運用設定を Ansible で反映する�
 - `roles/monitoring`: CloudWatch Agent の導入と設定
 
 `tasks/main.yml` は role 内の入口だけにし、実処理は `install.yml` `configure.yml` `service.yml` などへ分割しています。
+`roles/wrapper-scripts` では `/mc stop` 時に `serverfiles` を S3 へ backup する wrapper と、必要時だけ手動で使う restore wrapper を配置します。
 
 ## 実行
 

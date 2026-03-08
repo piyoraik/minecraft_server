@@ -66,6 +66,11 @@ curl \
       },
       {
         "type": 1,
+        "name": "restore",
+        "description": "停止中サーバーへ latest backup を復元します"
+      },
+      {
+        "type": 1,
         "name": "cmd",
         "description": "許可されたMinecraftコマンドを実行します",
         "options": [

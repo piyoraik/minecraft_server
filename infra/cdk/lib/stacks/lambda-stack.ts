@@ -22,6 +22,8 @@ export type LambdaStackProps = StackProps & {
  * secret、log group、データストア、Lambda の接続点をここに集約し、各 Construct の責務を分離する。
  */
 export class LambdaStack extends Stack {
+  public readonly ansibleSsmBucket: import("aws-cdk-lib/aws-s3").IBucket
+
   public constructor(scope: Construct, id: string, props: LambdaStackProps) {
     super(scope, id, props)
     applyStandardTags(this, props.config)
@@ -36,6 +38,7 @@ export class LambdaStack extends Stack {
     const operationsData = new OperationsDataConstruct(this, "OperationsData", {
       removalPolicy: props.config.removalPolicies.stateful
     })
+    this.ansibleSsmBucket = operationsData.ansibleSsmBucket
     const discordBot = new DiscordBotConstruct(this, "DiscordBot", {
       commandProcessorLogGroup: logGroups.commandProcessor,
       discordApplicationId: secrets.discordApplicationId,

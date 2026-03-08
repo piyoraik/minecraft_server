@@ -1,4 +1,8 @@
 #!/bin/bash
 set -euo pipefail
+
+/usr/local/bin/mc-command "save-off" || true
+/usr/local/bin/mc-command "save-all" || true
 sudo -u minecraft /home/minecraft/linuxgsm/mcserver stop
+/usr/local/bin/mc-backup
 echo "STATUS:OK"

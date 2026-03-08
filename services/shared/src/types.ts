@@ -2,6 +2,7 @@ export type CommandName =
   | "start"
   | "stop"
   | "status"
+  | "restore"
   | "cmd"
   | "whitelist"
   | "admin"
@@ -20,7 +21,7 @@ type BaseCommandPayload = {
 
 export type CommandPayload =
   | (BaseCommandPayload & {
-      commandName: "start" | "stop" | "status"
+      commandName: "start" | "stop" | "status" | "restore"
     })
   | (BaseCommandPayload & {
       commandName: "cmd"

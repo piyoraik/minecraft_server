@@ -1,4 +1,4 @@
-import type { CommandPayload } from "../../../shared/src/types"
+import type { CommandPayload } from "@minecraft/shared"
 
 import type { PlayerStatsGateway, PlayerStatsRecord } from "../aws/player-stats"
 
