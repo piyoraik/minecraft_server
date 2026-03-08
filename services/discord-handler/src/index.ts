@@ -11,6 +11,7 @@ import {
   buildPayload,
   createRestoreCanceledResponse,
   createRestoreConfirmationResponse,
+  createRestoreStartedResponse,
   isRestoreCancelInteraction
 } from "./router"
 import { verifyDiscordRequest } from "./verify"
@@ -199,7 +200,7 @@ export const createHandler = (deps: HandlerDeps) => {
           userId: payload.userId
         })
 
-        return createDiscordResponse({ type: 6 })
+        return createDiscordResponse(createRestoreStartedResponse())
       }
 
       const payload = buildPayload(interaction, applicationId)

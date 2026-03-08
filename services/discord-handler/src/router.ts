@@ -347,3 +347,16 @@ export const createRestoreCanceledResponse = (): {
     }
   }
 }
+
+export const createRestoreStartedResponse = (): {
+  type: 7
+  data: { content: string; components: [] }
+} => {
+  return {
+    type: 7,
+    data: {
+      content: "restore を開始しました。完了したら follow-up で結果を返します。",
+      components: []
+    }
+  }
+}

@@ -26,5 +26,6 @@
     - mc-restore
     - mc-start
     - mc-stop
+    - mc-stop-no-backup
     - mc-status
     - mc-command

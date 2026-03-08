@@ -4,8 +4,8 @@
 - `/mc stop`: Minecraft を停止してから EC2 を停止する
 - `/mc status`: EC2 と Minecraft の状態、および接続先IPを確認する
 - `/mc restore`: まず確認ボタンを返し、承認後に latest backup を restore する
-  - EC2 が稼働中なら Minecraft を停止して restore する
-  - EC2 が停止中なら一時起動して restore し、完了後に再停止する
+  - EC2 が稼働中なら backup を取らずに Minecraft を停止して restore し、その後 Minecraft を再起動する
+  - EC2 が停止中なら一時起動して restore し、その後 Minecraft を起動したままにする
 - `/mc cmd`: 許可された Minecraft コマンドを実行する
   - 初期 allowlist: `list`, `say ...`, `save-all`, `save-on`, `save-off`, `time set ...`, `weather ...`, `difficulty ...`
 - `/mc whitelist add/remove/list/on/off`: ホワイトリストを管理する

@@ -273,7 +273,7 @@ test("cmd コマンドは allowlist 外を拒否する", async () => {
   assert.equal(firstMessage, "⚠️ 許可されていないコマンドです")
 })
 
-test("restore コマンドは stopped インスタンスを一時起動して restore 後に停止する", async () => {
+test("restore コマンドは stopped インスタンスを起動して restore 後に Minecraft を起動する", async () => {
   const sentMessages: string[] = []
   const calls: string[] = []
 
@@ -296,7 +296,7 @@ test("restore コマンドは stopped インスタンスを一時起動して re
           calls.push("start")
         },
         stopInstance: async () => {
-          calls.push("stop")
+          throw new Error("should not stop instance")
         },
         waitForState: async () => {
           calls.push("wait-running")
@@ -305,8 +305,11 @@ test("restore コマンドは stopped インスタンスを一時起動して re
       ssm: {
         runCommand: async (_instanceId, command) => {
           calls.push(command)
-          assert.match(command, /\/usr\/local\/bin\/mc-restore/)
-          return "backup restored"
+          if (command === "/usr/local/bin/mc-restore") {
+            return "backup restored"
+          }
+          assert.equal(command, "/usr/local/bin/mc-start")
+          return "started"
         },
         waitUntilReady: async () => {
           calls.push("wait-ssm")
@@ -326,12 +329,12 @@ test("restore コマンドは stopped インスタンスを一時起動して re
     "minecraft-server"
   )
 
-  assert.deepEqual(calls, ["start", "wait-running", "wait-ssm", "/usr/local/bin/mc-restore", "stop"])
+  assert.deepEqual(calls, ["start", "wait-running", "wait-ssm", "/usr/local/bin/mc-restore", "/usr/local/bin/mc-start"])
   assert.equal(sentMessages.length, 1)
-  assert.match(sentMessages[0] ?? "", /latest backup を restore/)
+  assert.match(sentMessages[0] ?? "", /Minecraft を起動しました/)
 })
 
-test("restore コマンドは running インスタンスでは Minecraft を停止して restore する", async () => {
+test("restore コマンドは running インスタンスでは backup なし停止後に restore して再起動する", async () => {
   const sentMessages: string[] = []
   const calls: string[] = []
 
@@ -363,11 +366,14 @@ test("restore コマンドは running インスタンスでは Minecraft を停�
       ssm: {
         runCommand: async (_instanceId, command) => {
           calls.push(command)
-          if (command === "/usr/local/bin/mc-stop") {
+          if (command === "/usr/local/bin/mc-stop-no-backup") {
             return "stopped"
           }
-          assert.equal(command, "/usr/local/bin/mc-restore")
-          return "backup restored"
+          if (command === "/usr/local/bin/mc-restore") {
+            return "backup restored"
+          }
+          assert.equal(command, "/usr/local/bin/mc-start")
+          return "started"
         },
         waitUntilReady: async () => {
           throw new Error("should not wait")
@@ -388,8 +394,8 @@ test("restore コマンドは running インスタンスでは Minecraft を停�
   )
 
   assert.equal(sentMessages.length, 1)
-  assert.deepEqual(calls, ["/usr/local/bin/mc-stop", "/usr/local/bin/mc-restore"])
-  assert.match(sentMessages[0] ?? "", /Minecraft は停止したままです/)
+  assert.deepEqual(calls, ["/usr/local/bin/mc-stop-no-backup", "/usr/local/bin/mc-restore", "/usr/local/bin/mc-start"])
+  assert.match(sentMessages[0] ?? "", /Minecraft を起動しました/)
 })
 
 test("stop コマンド時にオンラインセッションをクローズする", async () => {

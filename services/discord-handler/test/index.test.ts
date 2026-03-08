@@ -147,7 +147,7 @@ test("restore COMMAND interaction は確認メッセージを返し processor �
   assert.equal(invocationCount, 0)
 })
 
-test("restore confirm button interaction は processor を invoke して deferred update を返す", async () => {
+test("restore confirm button interaction は processor を invoke して進行中メッセージへ更新する", async () => {
   const { publicKeyHex, privateKey } = exportRawPublicKeyHex()
   const invocations: CommandPayload[] = []
 
@@ -183,8 +183,12 @@ test("restore confirm button interaction は processor を invoke して deferre
 
   const response = await handler({ body, headers })
 
+  const parsedBody = JSON.parse(response.body) as { type: number; data: { content: string; components: [] } }
+
   assert.equal(response.statusCode, 200)
-  assert.equal(response.body, JSON.stringify({ type: 6 }))
+  assert.equal(parsedBody.type, 7)
+  assert.match(parsedBody.data.content, /restore を開始しました/)
+  assert.deepEqual(parsedBody.data.components, [])
   assert.equal(invocations.length, 1)
   assert.equal(invocations[0]?.commandName, "restore")
 })

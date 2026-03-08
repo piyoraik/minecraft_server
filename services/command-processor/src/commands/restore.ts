@@ -8,7 +8,8 @@ const formatOutput = (output: string): string => {
 
 /**
  * latest backup の restore だけを明示実行する。
- * running 時は Minecraft を停止してから restore し、stopped 時は一時起動して restore 後に再停止する。
+ * restore 対象の backup を上書きしないよう、復元前停止では backup を取らない。
+ * running/stopped どちらでも restore 後は Minecraft を起動し、接続可能な状態まで戻す。
  */
 export const handleRestore = async (
   ec2: Ec2Gateway,
@@ -18,9 +19,10 @@ export const handleRestore = async (
   const instance = await ec2.describeInstance(instanceId)
 
   if (instance.state === "running") {
-    await ssm.runCommand(instanceId, createSsmCommand("mc-stop"))
+    await ssm.runCommand(instanceId, createSsmCommand("mc-stop-no-backup"))
     const output = await ssm.runCommand(instanceId, createSsmCommand("mc-restore"))
-    return `✅ latest backup を restore しました。Minecraft は停止したままです${formatOutput(output)}`
+    await ssm.runCommand(instanceId, createSsmCommand("mc-start"))
+    return `✅ latest backup を restore して Minecraft を起動しました${formatOutput(output)}`
   }
 
   if (instance.state !== "stopped") {
@@ -31,10 +33,7 @@ export const handleRestore = async (
   await ec2.waitForState(instanceId, "running", 18, 10_000)
   await ssm.waitUntilReady(instanceId, 30, 5_000)
 
-  try {
-    const output = await ssm.runCommand(instanceId, createSsmCommand("mc-restore"))
-    return `✅ latest backup を restore しました${formatOutput(output)}`
-  } finally {
-    await ec2.stopInstance(instanceId)
-  }
+  const output = await ssm.runCommand(instanceId, createSsmCommand("mc-restore"))
+  await ssm.runCommand(instanceId, createSsmCommand("mc-start"))
+  return `✅ latest backup を restore して Minecraft を起動しました${formatOutput(output)}`
 }

@@ -5,6 +5,7 @@ import {
   buildPayload,
   createRestoreCanceledResponse,
   createRestoreConfirmationResponse,
+  createRestoreStartedResponse,
   isRestoreCancelInteraction,
   parseCommandName
 } from "../src/router"
@@ -122,6 +123,16 @@ test("createRestoreCanceledResponse は update 用 payload を返す", () => {
     type: 7,
     data: {
       content: "restore をキャンセルしました。",
+      components: []
+    }
+  })
+})
+
+test("createRestoreStartedResponse は進行中メッセージを返す", () => {
+  assert.deepEqual(createRestoreStartedResponse(), {
+    type: 7,
+    data: {
+      content: "restore を開始しました。完了したら follow-up で結果を返します。",
       components: []
     }
   })
