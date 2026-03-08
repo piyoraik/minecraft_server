@@ -1,0 +1,13 @@
+---
+- name: LinuxGSM 実行に必要な依存パッケージをインストールする
+  ansible.builtin.dnf:
+    name: "{{ linuxgsm_packages }}"
+    state: present
+
+- name: LinuxGSM セットアップスクリプトを配置する
+  ansible.builtin.get_url:
+    url: "{{ linuxgsm_install_url }}"
+    dest: "{{ linuxgsm_dir }}/linuxgsm.sh"
+    mode: "0755"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_user }}"

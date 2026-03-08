@@ -1,0 +1,7 @@
+---
+- name: Minecraft サーバー管理用 mcserver を初期化する
+  become_user: "{{ minecraft_user }}"
+  ansible.builtin.command:
+    cmd: "./linuxgsm.sh mcserver"
+    chdir: "{{ linuxgsm_dir }}"
+    creates: "{{ linuxgsm_dir }}/mcserver"

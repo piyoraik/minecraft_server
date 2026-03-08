@@ -1,0 +1,22 @@
+---
+- name: Wrapper Scripts Role Verify
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Mc-start wrapper script が配置済みであることを確認する
+      ansible.builtin.stat:
+        path: /usr/local/bin/mc-start
+      register: mc_start_script
+
+    - name: Mc-status wrapper script が配置済みであることを確認する
+      ansible.builtin.stat:
+        path: /usr/local/bin/mc-status
+      register: mc_status_script
+
+    - name: Wrapper script 群が実行可能であることを確認する
+      ansible.builtin.assert:
+        that:
+          - mc_start_script.stat.exists
+          - mc_start_script.stat.mode == "0755"
+          - mc_status_script.stat.exists
+          - mc_status_script.stat.mode == "0755"

@@ -1,0 +1,25 @@
+---
+- name: Common Role Verify
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Minecraft ユーザーが作成済みであることを確認する
+      ansible.builtin.command:
+        cmd: id minecraft
+      changed_when: false
+
+    - name: Minecraft ホームディレクトリが存在することを確認する
+      ansible.builtin.stat:
+        path: /home/minecraft
+      register: common_minecraft_home_dir
+
+    - name: LinuxGSM ディレクトリが存在することを確認する
+      ansible.builtin.stat:
+        path: /home/minecraft/linuxgsm
+      register: common_linuxgsm_dir
+
+    - name: Common Role の必須ディレクトリが揃っていることを確認する
+      ansible.builtin.assert:
+        that:
+          - common_minecraft_home_dir.stat.isdir
+          - common_linuxgsm_dir.stat.isdir

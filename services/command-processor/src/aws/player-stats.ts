@@ -69,8 +69,8 @@ const parseRecord = (item: Record<string, AttributeValue> | undefined): PlayerSt
 }
 
 /**
- * プレイヤー統計テーブルの読み書きを隠蔽する gateway を生成する。
- * 集計ロジックを Lambda ハンドラから切り離し、テスト差し替えを容易にする。
+ * プレイヤー統計テーブルへのアクセスをここへ閉じ込め、集計ロジックから DynamoDB 詳細を隠す。
+ * Lambda ハンドラと永続化を切り離し、テスト時に差し替えやすくするための境界層。
  */
 export const createPlayerStatsGateway = (
   tableName: string,

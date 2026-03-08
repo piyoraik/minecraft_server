@@ -261,8 +261,8 @@ const sendWebhookNotification = async (webhookUrl: string, message: string): Pro
 }
 
 /**
- * join/leave イベントを統計テーブルへ反映し、Discord 通知まで行う。
- * PoC では player name ベースで扱い、同一セッション内の重複 join は無視する。
+ * ログ由来の入退室イベントを永続化と通知に変換し、集計の整合性をこの関数で保つ。
+ * PoC では player name を識別子にしているため、同一セッション内の重複 join はここで吸収する。
  */
 export const applyPlayerEvent = async (
   playerEvent: PlayerEvent,
@@ -310,8 +310,8 @@ export const applyPlayerEvent = async (
 }
 
 /**
- * CloudWatch Logs subscription event を処理するハンドラを組み立てる。
- * latest.log の入退室行だけを抽出し、プレイヤー単位の統計更新へ変換する。
+ * CloudWatch Logs 依存をここで閉じ、後続処理にはプレイヤーイベントだけを渡すためのハンドラを組み立てる。
+ * latest.log の入退室行以外を早めに捨てることで、統計更新ロジックを単純に保つ。
  */
 export const createHandler = (deps: HandlerDeps) => {
   return async (event: CloudWatchLogsEvent): Promise<void> => {

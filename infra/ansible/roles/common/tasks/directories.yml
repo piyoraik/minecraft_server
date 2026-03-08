@@ -1,0 +1,12 @@
+---
+- name: Minecraft 関連ディレクトリを事前作成する
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_user }}"
+    mode: "0755"
+  loop:
+    - "{{ minecraft_home }}"
+    - "{{ linuxgsm_dir }}"
+    - "{{ minecraft_server_dir }}"

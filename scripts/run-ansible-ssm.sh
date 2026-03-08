@@ -3,8 +3,8 @@ set -euo pipefail
 
 readonly AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 readonly AWS_CLI_BIN="${AWS_CLI_BIN:-aws}"
-readonly COMPUTE_STACK_NAME="${COMPUTE_STACK_NAME:-ComputeStack}"
-readonly LAMBDA_STACK_NAME="${LAMBDA_STACK_NAME:-LambdaStack}"
+readonly COMPUTE_STACK_NAME="${COMPUTE_STACK_NAME:-Compute}"
+readonly LAMBDA_STACK_NAME="${LAMBDA_STACK_NAME:-Lambda}"
 readonly RCON_SECRET_ID="${RCON_SECRET_ID:-/minecraft/rcon-password}"
 readonly WORKDIR="/Users/s-tanaka/work/minecraft"
 readonly ANSIBLE_GALAXY_CMD="${ANSIBLE_GALAXY_CMD:-ansible-galaxy}"
@@ -109,7 +109,7 @@ for arg in "$@"; do
 done
 
 if [[ ${#playbook_args[@]} -eq 0 ]]; then
-  eval "${ANSIBLE_PLAYBOOK_CMD}" -i infra/ansible/inventory/hosts.yml infra/ansible/site.yml
+  eval "${ANSIBLE_PLAYBOOK_CMD}" -i infra/ansible/inventory/production/hosts.yml infra/ansible/site.yml
 else
-  eval "${ANSIBLE_PLAYBOOK_CMD}" -i infra/ansible/inventory/hosts.yml infra/ansible/site.yml "${playbook_args[*]}"
+  eval "${ANSIBLE_PLAYBOOK_CMD}" -i infra/ansible/inventory/production/hosts.yml infra/ansible/site.yml "${playbook_args[*]}"
 fi

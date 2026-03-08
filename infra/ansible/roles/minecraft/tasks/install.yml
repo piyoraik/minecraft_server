@@ -1,0 +1,40 @@
+---
+- name: Minecraft バージョンマニフェストを取得する
+  ansible.builtin.uri:
+    url: https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+    return_content: true
+  register: minecraft_version_manifest
+
+- name: 対象バージョンのメタデータ URL を解決する
+  ansible.builtin.set_fact:
+    minecraft_version_metadata_url: >-
+      {{
+        (
+          minecraft_version_manifest.json.versions
+          | selectattr('id', 'equalto', minecraft_version)
+          | map(attribute='url')
+          | first
+        )
+      }}
+
+- name: 指定した Minecraft バージョンが公開済みであることを確認する
+  ansible.builtin.assert:
+    that:
+      - minecraft_version_metadata_url is string
+      - minecraft_version_metadata_url | length > 0
+    fail_msg: "minecraft_version={{ minecraft_version }} に対応する Mojang version metadata が見つかりません。"
+
+- name: 対象バージョンのダウンロード定義を取得する
+  ansible.builtin.uri:
+    url: "{{ minecraft_version_metadata_url }}"
+    return_content: true
+  register: minecraft_version_metadata
+
+- name: Minecraft サーバー JAR を配置する
+  ansible.builtin.get_url:
+    url: "{{ minecraft_version_metadata.json.downloads.server.url }}"
+    checksum: "sha1:{{ minecraft_version_metadata.json.downloads.server.sha1 }}"
+    dest: "{{ minecraft_server_dir }}/minecraft_server.jar"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_user }}"
+    mode: "0644"

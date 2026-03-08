@@ -1,0 +1,21 @@
+---
+minecraft_user: minecraft
+minecraft_home: /home/minecraft
+linuxgsm_dir: "{{ minecraft_home }}/linuxgsm"
+minecraft_server_dir: "{{ linuxgsm_dir }}/serverfiles"
+
+minecraft_version: "1.21.11"
+minecraft_port: 25565
+minecraft_query_port: 25565
+minecraft_memory_max: "2500M"
+minecraft_memory_min: "1G"
+linuxgsm_javaram: "2500"
+minecraft_motd: Minecraft Server
+minecraft_max_players: 20
+
+rcon_port: 25575
+rcon_password: "{{ lookup('env', 'MINECRAFT_RCON_PASSWORD') }}"
+
+wrapper_scripts_dir: /usr/local/bin
+cloudwatch_log_group_prefix: /minecraft/ec2
+aws_region: ap-northeast-1

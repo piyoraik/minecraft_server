@@ -107,8 +107,8 @@ const createDefaultDeps = (): HandlerDeps => {
 }
 
 /**
- * Discord からの署名検証と ACK 応答を担当するハンドラを組み立てる。
- * コマンド本体は別 Lambda に委譲し、3 秒制約を超えにくい構成にしている。
+ * Discord の 3 秒制約を守るため、署名検証と受理応答だけをこのハンドラに閉じ込める。
+ * 実コマンドを別 Lambda へ委譲し、遅い処理で受付失敗しない構成にする。
  */
 export const createHandler = (deps: HandlerDeps) => {
   return async (event: LambdaEvent): Promise<LambdaResult> => {

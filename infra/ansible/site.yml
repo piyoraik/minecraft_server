@@ -1,2 +1,3 @@
 ---
-- import_playbook: playbooks/site.yml
+- name: Minecraft サーバー構成 Playbook を読み込む
+  import_playbook: playbooks/site.yml

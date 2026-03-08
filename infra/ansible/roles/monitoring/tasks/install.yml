@@ -1,0 +1,5 @@
+---
+- name: 監視用 CloudWatch Agent をインストールする
+  ansible.builtin.dnf:
+    name: amazon-cloudwatch-agent
+    state: present

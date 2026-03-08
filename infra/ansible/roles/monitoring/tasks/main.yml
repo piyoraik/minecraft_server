@@ -1,18 +1,9 @@
 ---
-- name: CloudWatch Agent をインストール
-  ansible.builtin.dnf:
-    name: amazon-cloudwatch-agent
-    state: present
+- name: CloudWatch Agent インストールタスクを読み込む
+  ansible.builtin.import_tasks: install.yml
 
-- name: CloudWatch Agent 設定を配置
-  ansible.builtin.template:
-    src: amazon-cloudwatch-agent.json.j2
-    dest: "{{ cloudwatch_agent_config_path }}"
-    mode: "0644"
-  notify: CloudWatch Agent を再起動
+- name: CloudWatch Agent 設定タスクを読み込む
+  ansible.builtin.import_tasks: configure.yml
 
-- name: CloudWatch Agent を有効化
-  ansible.builtin.systemd:
-    name: amazon-cloudwatch-agent
-    enabled: true
-    state: started
+- name: CloudWatch Agent サービスタスクを読み込む
+  ansible.builtin.import_tasks: service.yml

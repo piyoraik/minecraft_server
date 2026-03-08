@@ -405,7 +405,7 @@ infra/ansible/
     └── monitoring/       # CloudWatch Agent 設定
 ```
 
-### 7.2 Ansible 変数 (group_vars/all.yml)
+### 7.2 Ansible 変数 (inventory/production/group_vars/all.yml)
 
 ```yaml
 # ユーザー・パス

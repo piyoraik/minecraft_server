@@ -1,0 +1,6 @@
+---
+- name: Common Role Converge
+  hosts: all
+  become: true
+  roles:
+    - role: /Users/s-tanaka/work/minecraft/infra/ansible/roles/common

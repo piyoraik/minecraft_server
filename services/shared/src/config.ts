@@ -7,8 +7,8 @@ const isNonEmptyString = (value: string | undefined): value is string => {
 }
 
 /**
- * 必須環境変数を読み取り、空文字や未定義を早期に弾く。
- * Lambda ハンドラ起動直後に設定不備を検出したいため、例外で失敗させる。
+ * ハンドラ本体へ不完全な設定を持ち込まないため、必須環境変数の検証を起動直後に済ませる。
+ * 空文字も設定ミスとして扱い、外部依存へ進む前に例外で止める。
  */
 export const readRequiredEnv = <TKeys extends readonly string[]>(
   keys: TKeys,

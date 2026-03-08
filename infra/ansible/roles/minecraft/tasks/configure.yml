@@ -1,0 +1,40 @@
+---
+- name: LinuxGSM 設定ディレクトリを作成する
+  ansible.builtin.file:
+    path: "{{ linuxgsm_dir }}/lgsm/config-lgsm/mcserver"
+    state: directory
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_user }}"
+    mode: "0755"
+
+- name: RCON パスワードが実行時に渡されていることを確認する
+  ansible.builtin.assert:
+    that:
+      - rcon_password is string
+      - rcon_password | length > 0
+    fail_msg: "rcon_password が未設定です。MINECRAFT_RCON_PASSWORD を環境変数として渡してください。"
+
+- name: LinuxGSM 用 mcserver.cfg を配置する
+  ansible.builtin.template:
+    src: mcserver.cfg.j2
+    dest: "{{ linuxgsm_dir }}/lgsm/config-lgsm/mcserver/mcserver.cfg"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_user }}"
+    mode: "0644"
+
+- name: Minecraft サーバー設定 server.properties を配置する
+  ansible.builtin.template:
+    src: server.properties.j2
+    dest: "{{ minecraft_server_dir }}/server.properties"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_user }}"
+    mode: "0644"
+
+- name: Minecraft 利用規約受諾ファイルを配置する
+  ansible.builtin.copy:
+    dest: "{{ minecraft_server_dir }}/eula.txt"
+    content: |
+      eula=true
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_user }}"
+    mode: "0644"

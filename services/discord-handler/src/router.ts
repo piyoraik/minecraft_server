@@ -65,8 +65,8 @@ const isCommandName = (value: string): value is CommandName => {
 }
 
 /**
- * Discord の interaction payload から実際のサブコマンド名を取り出す。
- * `/mc status` と `/status` の両表現を吸収するため、root と first option の両方を見る。
+ * Discord 側のコマンド表現差分をここで吸収し、以降の処理が単一のコマンド名だけを見れば済むようにする。
+ * `/mc status` と `/status` の両方を許容するため、root と first option の両方を確認する。
  */
 export const parseCommandName = (interaction: DiscordInteraction): CommandName | null => {
   const rootName = interaction.data?.name
@@ -85,8 +85,8 @@ export const parseCommandName = (interaction: DiscordInteraction): CommandName |
 }
 
 /**
- * Discord interaction を内部の CommandPayload に正規化する。
- * ここで Discord 固有のネストを吸収し、以降の処理はアプリ側の型だけを見る。
+ * Discord 固有の入れ子構造をこの段階で剥がし、後続処理をアプリ側の型に閉じ込める。
+ * ルータ以降で Discord SDK 依存の分岐を増やさないための正規化ポイント。
  */
 export const buildPayload = (
   interaction: DiscordInteraction,

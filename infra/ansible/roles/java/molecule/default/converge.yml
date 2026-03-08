@@ -1,0 +1,14 @@
+---
+- name: Java Role Converge
+  hosts: all
+  become: true
+  pre_tasks:
+    - name: DNF キャッシュを初期化する
+      ansible.builtin.command: dnf clean all
+      changed_when: false
+
+    - name: DNF メタデータを再構築する
+      ansible.builtin.command: dnf makecache
+      changed_when: false
+  roles:
+    - role: /Users/s-tanaka/work/minecraft/infra/ansible/roles/java

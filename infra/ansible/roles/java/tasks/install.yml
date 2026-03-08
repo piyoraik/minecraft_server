@@ -1,0 +1,5 @@
+---
+- name: Minecraft 実行用 Java 21 Corretto をインストールする
+  ansible.builtin.dnf:
+    name: "{{ java_package_name }}"
+    state: present

@@ -4,6 +4,7 @@ PoC として確認済みの範囲、既知の制約、残作業は [poc-status.
 
 1. 依存関係をインストールする
 ```bash
+aws login
 npm install
 npm run typecheck
 npm run test
@@ -11,13 +12,14 @@ npm run test
 
 2. CDK をデプロイする
 ```bash
-cd /Users/s-tanaka/work/minecraft/infra/cdk
-cdk deploy --all
+make cdk-deploy
 ```
 
-CDK の実装本体は `infra/cdk/stacks/` と `infra/cdk/constructs/` にあり、`infra/cdk/lib/` は既存 import 互換のための re-export として残している。
+CDK の実装本体は `infra/cdk/lib/stacks/` と `infra/cdk/lib/constructs/` にある。設定値は `infra/cdk/lib/config/`、補助処理は `infra/cdk/lib/helpers/` に配置している。
 
-`LambdaStack` から Ansible 用 S3 バケット名、`ComputeStack` から EC2 Instance ID が出力される
+Ansible の inventory は `infra/ansible/inventory/production/hosts.yml` を起点にし、共通変数は `infra/ansible/inventory/production/group_vars/all.yml` に配置している。
+
+`Lambda` から Ansible 用 S3 バケット名、`Compute` から EC2 Instance ID が出力される
 
 3. Secrets Manager に値を投入する
 ```bash
@@ -52,25 +54,35 @@ make ansible-ssm
 Ansible の playbook 実体は `infra/ansible/playbooks/site.yml` で、`infra/ansible/site.yml` は既存実行経路との互換用 wrapper になっている。
 
 Session Manager 接続の前提:
+- 先に `aws login` で AWS CLI セッションが有効になっていること
 - ローカルに `session-manager-plugin` が入っていること
 - macOS の例:
 ```bash
 brew install --cask session-manager-plugin
 ```
 - ローカルに `boto3` / `botocore` が入っていること
-- EC2 が SSM 管理対象として `aws ssm start-session --target $(aws cloudformation describe-stacks --stack-name ComputeStack --region ap-northeast-1 --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue | [0]" --output text)` で接続できること
+- EC2 が SSM 管理対象として `aws ssm start-session --target $(aws cloudformation describe-stacks --stack-name Compute --region ap-northeast-1 --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue | [0]" --output text)` で接続できること
 
 必要に応じて上書きできる値:
 ```bash
 export AWS_REGION="ap-northeast-1"
-export COMPUTE_STACK_NAME="ComputeStack"
-export LAMBDA_STACK_NAME="LambdaStack"
+export COMPUTE_STACK_NAME="Compute"
+export LAMBDA_STACK_NAME="Lambda"
 export RCON_SECRET_ID="/minecraft/rcon-password"
 make ansible-ssm-check
 ```
 
+Ansible の静的検証と role テスト:
+```bash
+make yaml-lint
+make ansible-lint
+make ansible-syntax-check
+make molecule-test
+```
+
 1Password CLI を使う場合:
 ```bash
+aws login
 op run -- make register-commands
 op run -- make ansible-ssm
 ```
@@ -78,6 +90,7 @@ op run -- make ansible-ssm
 `uv` 環境の Ansible を使う場合:
 ```bash
 uv add ansible-core boto3 botocore
+aws login
 ANSIBLE_GALAXY_CMD="uv run ansible-galaxy" \
 ANSIBLE_PLAYBOOK_CMD="uv run ansible-playbook" \
 op run -- make ansible-ssm
@@ -86,6 +99,7 @@ op run -- make ansible-ssm
 1Password の `aws` ラッパーを使いつつ `boto3` へ認証を橋渡しする場合:
 ```bash
 uv add ansible-core boto3 botocore
+aws login
 AWS_CLI_BIN="/Users/s-tanaka/.local/share/mise/installs/aws/2.34.4/aws-cli.pkg/Payload/aws-cli/aws" \
 ANSIBLE_GALAXY_CMD="uv run ansible-galaxy" \
 ANSIBLE_PLAYBOOK_CMD="uv run ansible-playbook" \

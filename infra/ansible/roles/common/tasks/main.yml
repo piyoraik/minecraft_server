@@ -1,18 +1,6 @@
 ---
-- name: minecraft ユーザーを作成
-  ansible.builtin.user:
-    name: "{{ minecraft_user }}"
-    shell: /bin/bash
-    create_home: true
+- name: Minecraft 実行ユーザー関連タスクを読み込む
+  ansible.builtin.import_tasks: user.yml
 
-- name: 必要ディレクトリを作成
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    owner: "{{ minecraft_user }}"
-    group: "{{ minecraft_user }}"
-    mode: "0755"
-  loop:
-    - "{{ minecraft_home }}"
-    - "{{ linuxgsm_dir }}"
-    - "{{ minecraft_server_dir }}"
+- name: Minecraft ディレクトリ準備タスクを読み込む
+  ansible.builtin.import_tasks: directories.yml

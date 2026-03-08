@@ -3,8 +3,8 @@ import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-sec
 export type SecretResolver = (secretArn: string) => Promise<string>
 
 /**
- * Secrets Manager の値取得を関数化し、同一実行内ではメモリキャッシュを使い回す。
- * 署名鍵や Webhook URL のような不変値を毎回再取得しないための境界層。
+ * Secrets Manager へのアクセスをここに閉じ込め、呼び出し側から SDK 詳細を隠す。
+ * 署名鍵や Webhook URL のような不変値を同一実行内で再取得しないため、メモリキャッシュを併用する。
  */
 export const createSecretResolver = (
   client: SecretsManagerClient = new SecretsManagerClient({})

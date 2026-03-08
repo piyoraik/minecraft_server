@@ -153,8 +153,8 @@ export const processCommand = async (
 }
 
 /**
- * 非同期 invoke されたコマンド payload を検証し、依存を組み立てて実行する。
- * 外部境界はここで閉じ、以降のロジックは型安全な CommandPayload だけを扱う。
+ * 非同期実行されたイベントの検証と依存解決をここで終わらせ、後続ロジックを型安全な入力だけに限定する。
+ * Lambda の外部境界を一本化し、各コマンド実装へ AWS 固有の初期化を漏らさないための入口。
  */
 export const handler = async (event: unknown): Promise<void> => {
   if (!isCommandPayload(event)) {

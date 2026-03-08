@@ -1,0 +1,6 @@
+---
+- name: Minecraft 実行ユーザーを作成する
+  ansible.builtin.user:
+    name: "{{ minecraft_user }}"
+    shell: /bin/bash
+    create_home: true

@@ -343,17 +343,52 @@ const user = getUser(id)
 const user = repository.findById(id)
 ```
 
-JSDoc は公開 API・ライブラリ境界・複雑なロジックに記述する。
+---
+
+### JSDoc を必須とする対象
+
+以下のいずれかに該当する場合は JSDoc を記述する。
+
+- 外部公開 API
+- ライブラリ境界の関数・クラス
+- service 層の主要な関数
+- 複雑なビジネスロジック
+- 副作用のある処理
+- 呼び出し条件・前提・制約・例外が重要な処理
 
 ```ts
 /**
  * 指定ユーザーの権限を検証する。
  * 権限がない場合は PermissionError をスローする。
+ *
+ * @param userId - 検証対象のユーザー ID
+ * @param action - 実行しようとしているアクション
+ * @throws {PermissionError} ユーザーに該当アクションの権限がない場合
  */
 const validatePermission = (userId: string, action: Action): void => {
   // ...
 }
 ```
+
+---
+
+### JSDoc を任意とする対象
+
+以下は状況に応じて記述する。
+
+- repository 層の単純な CRUD
+- 内部 util 関数
+- 型や関数名だけで意図が明確な処理
+
+---
+
+### JSDoc を不要とする対象
+
+以下は JSDoc を書かない。
+
+- trivial な helper 関数
+- 自明な getter / mapper / formatter
+- 一時的で極小のローカル関数
 
 ---
 

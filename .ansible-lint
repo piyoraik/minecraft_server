@@ -1,0 +1,9 @@
+profile: basic
+exclude_paths:
+  - node_modules/
+  - .venv/
+  - infra/cdk/cdk.out/
+use_default_rules: true
+kinds:
+  - yaml: "**/*.yml"
+  - yaml: "**/*.yaml"

@@ -1,5 +1,3 @@
 ---
-- name: Java 21 Corretto をインストール
-  ansible.builtin.dnf:
-    name: "{{ java_package_name }}"
-    state: present
+- name: Java インストールタスクを読み込む
+  ansible.builtin.import_tasks: install.yml

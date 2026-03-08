@@ -1,0 +1,27 @@
+---
+dependency:
+  name: galaxy
+driver:
+  name: docker
+platforms:
+  - name: common-instance
+    image: geerlingguy/docker-amazonlinux2023-ansible:latest
+    pre_build_image: true
+    privileged: false
+    command: sleep infinity
+    user: root
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      roles_path: ../../../
+      remote_tmp: /tmp
+  inventory:
+    host_vars:
+      common-instance:
+        minecraft_user: minecraft
+        minecraft_home: /home/minecraft
+        linuxgsm_dir: /home/minecraft/linuxgsm
+        minecraft_server_dir: /home/minecraft/linuxgsm/serverfiles
+verifier:
+  name: ansible

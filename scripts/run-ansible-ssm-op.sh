@@ -4,8 +4,8 @@ set -euo pipefail
 readonly WORKDIR="/Users/s-tanaka/work/minecraft"
 readonly AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 readonly AWS_CLI_BIN="${AWS_CLI_BIN:-aws}"
-readonly COMPUTE_STACK_NAME="${COMPUTE_STACK_NAME:-ComputeStack}"
-readonly LAMBDA_STACK_NAME="${LAMBDA_STACK_NAME:-LambdaStack}"
+readonly COMPUTE_STACK_NAME="${COMPUTE_STACK_NAME:-Compute}"
+readonly LAMBDA_STACK_NAME="${LAMBDA_STACK_NAME:-Lambda}"
 readonly RCON_SECRET_ID="${RCON_SECRET_ID:-/minecraft/rcon-password}"
 readonly ANSIBLE_GALAXY_CMD="${ANSIBLE_GALAXY_CMD:-uv run ansible-galaxy}"
 readonly ANSIBLE_PLAYBOOK_CMD="${ANSIBLE_PLAYBOOK_CMD:-uv run ansible-playbook}"
@@ -23,7 +23,7 @@ require_command op
 
 if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
   if "${AWS_CLI_BIN}" configure export-credentials --help >/dev/null 2>&1; then
-    # export-credentials が使える場合だけ env bridge を張る。
+    # aws configure export-credentials が使える環境だけ、boto3 向けの認証情報を環境変数へ引き継ぐ。
     eval "$("${AWS_CLI_BIN}" configure export-credentials --format env-no-export)"
   fi
 fi

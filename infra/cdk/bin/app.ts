@@ -1,15 +1,16 @@
 import { App, type StackProps } from "aws-cdk-lib"
 
-import { ComputeStack } from "../stacks/compute-stack"
-import { LambdaStack } from "../stacks/lambda-stack"
-import { NetworkStack } from "../stacks/network-stack"
-
-const DEFAULT_REGION = "ap-northeast-1"
+import { loadAppConfig } from "../lib/config/default"
+import { applyStandardTags } from "../lib/helpers/tags"
+import { ComputeStack } from "../lib/stacks/compute-stack"
+import { LambdaStack } from "../lib/stacks/lambda-stack"
+import { NetworkStack } from "../lib/stacks/network-stack"
 
 const app = new App()
+const config = loadAppConfig()
 
 const account = process.env.CDK_DEFAULT_ACCOUNT
-const region = process.env.CDK_DEFAULT_REGION ?? DEFAULT_REGION
+const region = process.env.CDK_DEFAULT_REGION ?? config.region
 
 const stackProps: StackProps = account
   ? {
@@ -20,14 +21,23 @@ const stackProps: StackProps = account
     }
   : {}
 
-const networkStack = new NetworkStack(app, "NetworkStack", stackProps)
+applyStandardTags(app, config)
 
-const computeStack = new ComputeStack(app, "ComputeStack", {
+const networkStack = new NetworkStack(app, "Network", {
   ...stackProps,
+  config
+})
+
+const computeStack = new ComputeStack(app, "Compute", {
+  ...stackProps,
+  config,
   vpc: networkStack.vpc,
   securityGroup: networkStack.securityGroup,
   elasticIp: networkStack.elasticIp
 })
 computeStack.addDependency(networkStack)
 
-new LambdaStack(app, "LambdaStack", stackProps)
+new LambdaStack(app, "Lambda", {
+  ...stackProps,
+  config
+})

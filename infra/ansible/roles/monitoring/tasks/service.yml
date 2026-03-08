@@ -1,0 +1,6 @@
+---
+- name: CloudWatch Agent サービスを常時有効化する
+  ansible.builtin.systemd:
+    name: amazon-cloudwatch-agent
+    enabled: true
+    state: started

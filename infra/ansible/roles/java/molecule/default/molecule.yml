@@ -1,0 +1,20 @@
+---
+dependency:
+  name: galaxy
+driver:
+  name: docker
+platforms:
+  - name: java-instance
+    image: geerlingguy/docker-amazonlinux2023-ansible:latest
+    pre_build_image: true
+    privileged: false
+    command: sleep infinity
+    user: root
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      roles_path: ../../../
+      remote_tmp: /tmp
+verifier:
+  name: ansible

@@ -1,0 +1,13 @@
+---
+- name: Java Role Verify
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Java パッケージ情報を収集する
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Java 21 Corretto が導入済みであることを確認する
+      ansible.builtin.assert:
+        that:
+          - "'java-21-amazon-corretto-headless' in ansible_facts.packages"
